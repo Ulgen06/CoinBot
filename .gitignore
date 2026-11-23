@@ -1,0 +1,31 @@
+# Environment & Secrets
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Logs
+bot1haber/logs/*
+!bot1haber/logs/.gitkeep
+*.log
+
+# Runtime Data (her kullanici kendi cuzdan/haber verisini tutar)
+bot1haber/data/*
+!bot1haber/data/.gitkeep
+bot1haber/news_archive_v27.json
+
+# OS Files (Windows & macOS)
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+desktop.ini
+*.tmp
+*.lock

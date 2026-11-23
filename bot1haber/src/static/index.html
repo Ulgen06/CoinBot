@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ÜLGEN v30.0 | Elite Control Center</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+
+    <!-- Custom Style -->
+    <link rel="stylesheet" href="style.css?v=27.4">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-robot pulse"></i>
+                <span>ÜLGEN</span>
+            </div>
+
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" id="nav-dashboard">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-warroom">
+                    <i class="fa-solid fa-desktop" style="color:#ef4444;"></i>
+                    <span>Savaş Odası</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-risk">
+                    <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b;"></i>
+                    <span>Risk Analizi</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-portfolio">
+                    <i class="fa-solid fa-wallet"></i>
+                    <span>Portföy</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-news">
+                    <i class="fa-solid fa-newspaper"></i> Haberler
+                </a>
+                <a href="#" class="nav-item" id="nav-strategy">
+                    <i class="fa-solid fa-chess-knight"></i> Strateji
+                </a>
+                <a href="#" class="nav-item" id="nav-scanner">
+                    <i class="fa-solid fa-bullseye pulse-red"></i>
+                    <span>Sinyal Tarayıcı</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-coti">
+                    <i class="fa-solid fa-bolt" style="color:var(--purple-neon)"></i>
+                    <span>COTI Insights</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-settings">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Ayarlar</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-test">
+                    <i class="fa-solid fa-flask"></i>
+                    <span>Test Alanı</span>
+                </a>
+            </nav>
+
+
+            <div class="status-indicator">
+                <div class="dot online"></div>
+                <span>Sistem Çevrimiçi</span>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="top-bar">
+                <div class="page-title">
+                    <h1>Komuta Merkezi</h1>
+                    <span class="subtitle">Canlı Piyasa Takibi & Analiz</span>
+                </div>
+
+                <div class="header-tools">
+                    <div class="time-display" id="clock">12:00:00</div>
+                    <button class="icon-btn glass"><i class="fa-regular fa-bell"></i></button>
+                    <div class="profile glass">
+                        <img src="https://ui-avatars.com/api/?name=Ulgen+Bot&background=0D8ABC&color=fff" alt="Bot">
+                        <span>v27.4</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Page -->
+            <div id="dashboard-page" class="page-section active">
+                <div class="dashboard-grid">
+
+                    <!-- Stat Cards -->
+                    <!-- Hero Stats -->
+                    <div class="card stat-card glass" id="stat-equity">
+                        <div class="card-icon blue"><i class="fa-solid fa-vault"></i></div>
+                        <div class="card-info">
+                            <div class="stat-label">Toplam Varlık</div>
+                            <div class="stat-value" id="total-equity">$0.00</div>
+                            <div class="stat-change" id="equity-change">+0.00%</div>
+                        </div>
+                    </div>
+
+                    <div class="card stat-card glass" id="stat-pnl">
+                        <div class="card-icon green"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                        <div class="card-info">
+                            <div class="stat-label">Toplam Kâr</div>
+                            <div class="stat-value" id="total-profit">$0.00</div>
+                        </div>
+                    </div>
+
+                    <div class="card stat-card glass" id="stat-sentiment">
+                        <div class="card-icon purple"><i class="fa-solid fa-brain"></i></div>
+                        <div class="card-info">
+                            <div class="stat-label">Piyasa Duyarlılığı</div>
+                            <div class="sentiment-grid"
+                                style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:5px;">
+                                <!-- Left: Fear/Greed -->
+                                <div style="text-align:center;">
+                                    <div id="sentiment-gauge" style="margin:0 auto;"></div>
+                                    <div id="sentiment-label"
+                                        style="font-size:0.8rem; font-weight:bold; color:var(--text-main);">NÖTR</div>
+                                </div>
+
+                                <!-- Right: Stats -->
+                                <div
+                                    style="display:flex; flex-direction:column; justify-content:center; gap:5px; font-size:0.75rem; color:var(--text-muted); padding-left:10px; border-left:1px solid rgba(255,255,255,0.1);">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span><i class="fa-brands fa-bitcoin" style="color:#f7931a;"></i> BTC.D:</span>
+                                        <span id="ulgen-btc-dom"
+                                            style="color:var(--text-main); font-weight:bold;">--%</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span><i class="fa-solid fa-heart-pulse" style="color:#ef4444;"></i>
+                                            Nabız:</span>
+                                        <span id="market-pulse"
+                                            style="color:var(--text-main); font-weight:bold;">--</span>
+                                    </div>
+                                    <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;"
+                                        id="social-score-container">
+                                        <span><i class="fa-brands fa-twitter" style="color:#1d9bf0;"></i> Sosyal:</span>
+                                        <span id="social-score" style="color:#1d9bf0; font-weight:bold;">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Matrix Terminal (New) -->
+                    <!-- ROW 2: Matrix, whale, and Signal Dashboard -->
+                    <div class="card glass"
+                        style="border:1px solid rgba(0,255,0,0.2); box-shadow: 0 0 15px rgba(0,255,0,0.05);">
+                        <div class="card-header"
+                            style="border-bottom:1px solid rgba(0,255,0,0.2); padding-bottom:0.5rem;">
+                            <h3 style="color:#3b82f6; font-family:'Courier New', monospace;"><i
+                                    class="fa-brands fa-telegram"></i> TELEGRAM_KOMUTA_MERKEZİ:~#</h3>
+                            <div style="display:flex; gap:10px;">
+                                <span class="status-dot online"></span>
+                                <span style="font-size:0.8rem; color:var(--text-muted);">BOT AKTİF</span>
+                            </div>
+                        </div>
+                        <div id="matrix-terminal"
+                            style="height:180px; overflow-y:auto; padding:0.8rem; font-family:'Courier New', monospace; font-size:0.8rem; color:#e2e8f0; background:rgba(0,0,0,0.8); text-shadow: none;">
+                            <div style="margin-bottom:8px; color:#60a5fa;">[SİSTEM] Telegram Bot Bağlantısı... OK</div>
+                            <div id="terminal-content"></div>
+                        </div>
+                    </div>
+
+                    <div class="card glass"
+                        style="background:linear-gradient(135deg, rgba(16,185,129,0.05) 0%, rgba(0,0,0,0) 100%); border:1px solid rgba(16,185,129,0.2);">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-water" style="color:#3b82f6;"></i> Canlı Balina Radarı</h2>
+                        </div>
+                        <div class="whale-list" id="whale-feed"
+                            style="max-height:180px; overflow-y:auto; padding:0 0.5rem;">
+                        </div>
+                    </div>
+
+                    <!-- AI SIGNAL DASHBOARD (New - 3rd Col) -->
+                    <div class="card glass" style="border: 1px solid rgba(168, 85, 247, 0.3);">
+                        <div class="card-header" style="justify-content: space-between;">
+                            <h2><i class="fa-solid fa-microchip" style="color:#a855f7;"></i> AI Strateji Odası</h2>
+                            <select id="signal-symbol" onchange="updateSignalDashboard()"
+                                style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); color:white; border-radius:4px; font-size:0.7rem;">
+                                <option value="BTC">BTC</option>
+                                <option value="ETH">ETH</option>
+                                <option value="SOL">SOL</option>
+                                <option value="TAO">TAO</option>
+                            </select>
+                        </div>
+                        <div id="signal-dashboard-content"
+                            style="display:flex; flex-direction:column; gap:8px; padding-top:5px;">
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                                <div class="mini-stat-v2">
+                                    <span class="label">RSI</span>
+                                    <span class="value" id="signal-rsi">--</span>
+                                </div>
+                                <div class="mini-stat-v2">
+                                    <span class="label">MACD</span>
+                                    <span class="value" id="signal-macd">--</span>
+                                </div>
+                            </div>
+                            <div class="mini-stat-v2" style="text-align:center;">
+                                <span class="label">AI KARARI</span>
+                                <span class="value" id="signal-decision"
+                                    style="font-size:1.1rem; color:#10b981;">---</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Active Positions Table -->
+                    <div class="card glass span-3" style="margin-top: 1.5rem; margin-bottom: 2rem;">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-bolt" style="color:#f59e0b;"></i> Aktif İşlemlerim</h2>
+                            <span class="live-badge">CANLI TAKİP</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Coin</th>
+                                        <th>Miktar</th>
+                                        <th>Giriş</th>
+                                        <th>Mevcut</th>
+                                        <th>K/Z ($)</th>
+                                        <th>İşlem</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashboard-positions-body">
+                                    <tr>
+                                        <td colspan="6"
+                                            style="text-align:center; padding:1rem; color:var(--text-muted);">
+                                            Yükleniyor...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Market Heatmap (Treemap) -->
+                    <div class="card market-card glass span-3" style="min-height: 600px;">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-fire-flame-curved" style="color:#ef4444;"></i> Canlı Piyasa Isı
+                                Haritası (Heatmap)</h2>
+                            <div style="display:flex; gap:10px; align-items:center;">
+                                <span style="font-size:0.75rem; color:var(--text-muted);">Sıralama: Piyasa
+                                    Ağırlığı</span>
+                                <button class="btn-small glass" onclick="updatePrices()"><i
+                                        class="fa-solid fa-rotate"></i></button>
+                            </div>
+                        </div>
+                        <div id="market-treemap" style="height: 520px; width: 100%;">
+                            <div class="loading-spinner">Isı Haritası Hazırlanıyor...</div>
+                        </div>
+                    </div>
+
+                    <!-- Elite Stats Row -->
+                    <div class="stats-grid mini span-3">
+                        <div class="mini-stat">
+                            <span class="label">Win/Loss:</span>
+                            <span class="value" id="stat-win-loss">0%</span>
+                        </div>
+                        <div class="mini-stat">
+                            <span class="label">Başarı:</span>
+                            <span class="value" id="stat-success-rate">0%</span>
+                        </div>
+                        <div class="mini-stat">
+                            <span class="label">En İyi:</span>
+                            <span class="value pulse-green" id="stat-best-trade">$0</span>
+                        </div>
+                        <div class="mini-stat">
+                            <span class="label">Pozisyon:</span>
+                            <span class="value" id="open-positions-count">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Elite Dashboard Layout -->
+                    <div class="elite-dashboard-grid span-3">
+                        <!-- LEFT MAIN COLUMN -->
+                        <div class="main-col">
+                            <!-- 1. Main Chart -->
+                            <div class="card chart-card main-chart glass">
+                                <div class="card-header compact-header">
+                                    <h3><i class="fa-solid fa-chart-line"></i> Piyasa Analizi</h3>
+                                    <div class="card-actions">
+                                        <button class="active" id="btn-equity">Varlık</button>
+                                        <button id="btn-tradingview">TradingView</button>
+                                    </div>
+                                </div>
+                                <div id="equityChart"></div>
+                                <div id="tv-chart-container" style="display:none; height:100%; width:100%"></div>
+                            </div>
+
+                            <!-- LIQUIDATION RADAR (Volatility Wall) -->
+                            <div class="card glass" style="margin-top:1rem; border:1px solid rgba(239, 68, 68, 0.2);">
+                                <div class="card-header compact-header" style="justify-content: space-between;">
+                                    <h5><i class="fa-solid fa-skull-crossbones" style="color:#ef4444;"></i> Likidasyon
+                                        Radarı (Pain Points)</h5>
+                                    <div style="font-size:0.7rem; color:var(--text-muted);">Cluster Volume (USD)</div>
+                                </div>
+                                <div id="liq-radar-chart" style="height: 250px;"></div>
+                            </div>
+
+                            <!-- 2. CLI Terminal -->
+                            <div class="card terminal-card glass elite-terminal">
+                                <div class="card-header compact-header">
+                                    <h5><i class="fa-solid fa-terminal"></i> AI Komuta Merkezi</h5>
+                                    <span class="status-badge">● ONLINE</span>
+                                </div>
+                                <div class="terminal-window" id="ai-chat-window" style="height: 160px;"></div>
+                                <div class="terminal-input-area">
+                                    <span class="cmd">></span>
+                                    <input type="text" id="ai-command-input" placeholder="Komut yazın...">
+                                </div>
+                            </div>
+
+                            <!-- Macro Calendar (Moved here as per request) -->
+                            <div class="card glass">
+                                <div class="card-header compact-header">
+                                    <h5><i class="fa-regular fa-calendar"></i> Makro Takvim</h5>
+                                </div>
+                                <div id="calendar-widget" style="margin-top:0.5rem;">
+                                    <!-- JS will populate -->
+                                    <div class="loading-spinner">Veriler Yükleniyor...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT SIDE COLUMN -->
+                        <div class="side-col">
+
+                            <!-- 3. AI Pick (Compact) -->
+                            <div class="card glass side-card">
+                                <div class="card-header compact-header">
+                                    <h5>Yapay Zeka Seçimi</h5>
+                                </div>
+                                <div class="bot-choice compact-choice">
+                                    <div class="coin-icon-lg" style="width:40px; height:40px;"><img
+                                            src="https://cryptologos.cc/logos/bittensor-tao-logo.png" alt="TAO">
+                                    </div>
+                                    <div class="choice-details">
+                                        <h3 style="font-size:1.2rem">$TAO</h3>
+                                        <span class="highlight" style="font-size:0.8rem">GÜÇLÜ AL (%94)</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Other content can go here or side-col can shrink -->
+
+                            <!-- 5. News (Ticker Style) -->
+                            <div class="card glass side-card">
+                                <div class="card-header compact-header">
+                                    <h5>Son Haberler</h5>
+                                    <span class="live-badge">CANLI</span>
+                                </div>
+                                <div class="news-list" id="news-list" style="max-height: 250px;">
+                                    <div class="loading-spinner">Yükleniyor...</div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div> <!-- End Elite Dashboard Layout -->
+                </div> <!-- End Dashboard Grid -->
+            </div> <!-- End Dashboard Page Section -->
+
+            <!-- War Room Page (New) -->
+            <div id="warroom-page" class="page-section">
+                <div class="card glass" style="height:100%; display:flex; flex-direction:column; padding:0;">
+                    <div class="card-header compact-header" style="padding:1rem;">
+                        <h2><i class="fa-solid fa-desktop" style="color:#ef4444;"></i> Savaş Odası (War Room)
+                        </h2>
+                        <div class="warroom-controls">
+                            <button class="btn-small glass" onclick="setWarRoom('MAJOR')">MAJOR</button>
+                            <button class="btn-small glass" onclick="setWarRoom('AI')">AI</button>
+                            <button class="btn-small glass" onclick="setWarRoom('MEME')">MEME</button>
+                        </div>
+                    </div>
+                    <div class="warroom-grid"
+                        style="flex:1; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; background:#000;">
+                        <div id="wr-chart-1" class="wr-chart"></div>
+                        <div id="wr-chart-2" class="wr-chart"></div>
+                        <div id="wr-chart-3" class="wr-chart"></div>
+                        <div id="wr-chart-4" class="wr-chart"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Risk Analysis Page (New) -->
+            <div id="risk-page" class="page-section">
+                <div class="dashboard-grid">
+                    <!-- Heatmap Card -->
+                    <div class="card glass span-2" style="min-height:500px;">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-fire" style="color:#f59e0b;"></i> Korelasyon Isı Haritası
+                            </h2>
+                            <span class="chart-desc">Varlıkların birlikte hareket etme oranı (-1 ile +1
+                                arası)</span>
+                        </div>
+                        <div id="correlationChart" style="height:400px;"></div>
+
+                        <!-- Explanation / Legend -->
+                        <div style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 1rem;">
+                            <h4 style="margin-bottom:0.5rem; color:var(--primary);"><i
+                                    class="fa-solid fa-graduation-cap"></i> Korelasyon Okuma Rehberi</h4>
+                            <div
+                                style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:1rem; font-size:0.9rem; color:var(--text-muted);">
+                                <div>
+                                    <strong style="color:#ef4444;">+0.7 ile +1.0 (Yüksek)</strong><br>
+                                    Varlıklar ikiz kardeş gibidir. Biri düşerse diğeri de düşer.
+                                    <br><span style="color:#fff;">⚠️ Risk:</span> Aynı anda ikisine de LONG
+                                    açmak,
+                                    sermayeyi tek bir koine bağlamak gibidir.
+                                </div>
+                                <div>
+                                    <strong style="color:#f59e0b;">+0.3 ile +0.7 (Orta)</strong><br>
+                                    Benzer trendleri izlerler ama ayrışabilirler.
+                                    <br><span style="color:#fff;">✅ Taktik:</span> Sepet yapmak için ideal
+                                    bölgedir.
+                                </div>
+                                <div>
+                                    <strong style="color:#10b981;">-1.0 ile +0.3 (Düşük/Ters)</strong><br>
+                                    Birbirinden bağımsız veya zıt hareket ederler.
+                                    <br><span style="color:#fff;">🛡️ Hedge:</span> Biri düşerken diğeri sabit
+                                    kalabilir
+                                    veya yükselebilir. Riski düşürür.
+                                </div>
+                            </div>
+                            <div
+                                style="margin-top:1rem; padding:0.8rem; background:rgba(255,255,255,0.05); border-radius:8px;">
+                                <strong>💡 İmparator Stratejisi:</strong> Eğer portföyün kıpkırmızıysa (Yüksek
+                                Korelasyon), piyasa tersine döndüğünde <u>tüm bakiyeni</u> aynı anda
+                                kaybedersin.
+                                Güvenli liman için mavileri ve yeşilleri (Düşük Korelasyon) araya serpiştir.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Risk Metrics Card -->
+                    <div class="stat-card glass" style="flex-direction:column; align-items:flex-start;">
+                        <h2>Portföy Riski</h2>
+                        <div class="value-group" style="margin-top:1rem;">
+                            <span class="value" id="risk-level">HESAPLANIYOR</span>
+                        </div>
+                        <p style="color:var(--text-muted); margin-top:0.5rem;">Yıllık Volatilite: <span id="risk-vol"
+                                style="color:var(--text-main); font-weight:bold;">--%</span></p>
+                        <p style="color:var(--text-muted);">Beta (vs BTC): <span id="risk-beta"
+                                style="color:var(--text-main); font-weight:bold;">--</span></p>
+
+                        <div
+                            style="margin-top:2rem; padding:1rem; background:rgba(255,255,255,0.05); border-radius:10px; width:100%;">
+                            <h4 style="margin-bottom:0.5rem;"><i class="fa-solid fa-lightbulb"></i> Öneri</h4>
+                            <p style="font-size:0.9rem; color:var(--text-muted);">
+                                Yüksek korelasyon (kırmızı) riskin tek yönde yoğunlaştığını gösterir.
+                                Çeşitlendirme
+                                yapmak için yeşil/mavi alanları (düşük korelasyon) artırın.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Portfolio Page -->
+            <div id="portfolio-page" class="page-section">
+                <!-- Add Trade Form -->
+                <div class="card glass">
+                    <div class="card-header">
+                        <h2>İşlem Ekle</h2>
+                    </div>
+                    <form id="tradeForm" class="trade-form">
+                        <div class="form-group">
+                            <label>Coin Sembolü</label>
+                            <input type="text" id="t-symbol" placeholder="ORN: BTC" required>
+                        </div>
+                        <div class="form-group">
+                            <label>İşlem Tipi</label>
+                            <select id="t-type">
+                                <option value="BUY">AL (BUY)</option>
+                                <option value="SELL">SAT (SELL)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Miktar</label>
+                            <input type="number" step="any" id="t-amount" placeholder="0.00" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Fiyat ($)</label>
+                            <input type="number" step="any" id="t-price" placeholder="0.00" required>
+                        </div>
+                        <button type="submit" class="btn-primary">İşlemi Kaydet</button>
+                    </form>
+                </div>
+
+                <!-- Active Positions -->
+                <div class="card glass" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <h2>Açık Pozisyonlar</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Coin</th>
+                                    <th>Miktar</th>
+                                    <th>Giriş Fiyatı</th>
+                                    <th>Mevcut Fiyat</th>
+                                    <th>K/Z ($)</th>
+                                    <th>İşlem</th>
+                                </tr>
+                            </thead>
+                            <tbody id="active-positions-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Portfolio Table -->
+                <div class="card glass" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <h2>İşlem Geçmişi</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Tarih</th>
+                                    <th>Coin</th>
+                                    <th>Tip</th>
+                                    <th>Fiyat</th>
+                                    <th>Marjin</th>
+                                    <th>K/Z ($)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trade-history-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Strategy Page -->
+            <div id="strategy-page" class="page-section">
+                <div class="card glass">
+                    <div class="card-header">
+                        <h2>🎮 Strateji Kontrol Paneli</h2>
+                        <button class="btn-primary" onclick="saveBotConfig()">Ayarları Kaydet</button>
+                    </div>
+                    <div class="strategy-grid">
+                        <div class="input-group">
+                            <label>Kaldıraç (x)</label>
+                            <input type="range" id="cfg-leverage" min="1" max="50" value="10"
+                                oninput="this.nextElementSibling.value = this.value + 'x'">
+                            <output>10x</output>
+                        </div>
+                        <div class="input-group">
+                            <label>Risk (%)</label>
+                            <input type="number" id="cfg-risk" value="2.5" step="0.1">
+                        </div>
+                        <div class="input-group">
+                            <label>Stop Loss (%)</label>
+                            <input type="number" id="cfg-sl" value="1.5" step="0.1">
+                        </div>
+                        <div class="input-group">
+                            <label>Take Profit (%)</label>
+                            <input type="number" id="cfg-tp" value="3.0" step="0.1">
+                        </div>
+                        <div class="input-group">
+                            <label>Mod</label>
+                            <select id="cfg-mode">
+                                <option value="AGGRESSIVE">Saldırgan (Scalp)</option>
+                                <option value="CONSERVATIVE">Güvenli (Swing)</option>
+                                <option value="AI_AUTO">Yapay Zeka (Auto)</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="flex-direction:row; align-items:center; gap:10px">
+                            <input type="checkbox" id="cfg-trailing">
+                            <label for="cfg-trailing" style="margin:0">Trailing Stop Aktif</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Page (Added) -->
+
+            <div id="settings-page" class="page-section">
+                <div class="card glass">
+                    <div class="card-header">
+                        <h2>Görünüm ve Tema</h2>
+                    </div>
+
+                    <div class="theme-grid">
+                        <!-- 1. GÖK BÖRÜ -->
+                        <div class="theme-card active" data-theme="gokboru">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-solid fa-wolf-pack-battalion"></i></div>
+                                <div class="theme-title">
+                                    <h3>Gök Börü (Atlas)</h3>
+                                    <span>Turkuaz & Kozmik</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #40E0D0"></div>
+                                <div class="color-dot" style="background: #2E2EFE"></div>
+                                <div class="color-dot" style="background: #0B1026"></div>
+                            </div>
+                        </div>
+
+                        <!-- 2. KOYASH -->
+                        <div class="theme-card" data-theme="koyash">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-solid fa-sun"></i></div>
+                                <div class="theme-title">
+                                    <h3>Koyash (Apollo)</h3>
+                                    <span>Altın & Obsidyen</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #FFD700"></div>
+                                <div class="color-dot" style="background: #000000"></div>
+                                <div class="color-dot" style="background: #B8860B"></div>
+                            </div>
+                        </div>
+
+                        <!-- 3. OĞUZ KAĞAN -->
+                        <div class="theme-card" data-theme="oguz">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-solid fa-crown"></i></div>
+                                <div class="theme-title">
+                                    <h3>Oğuz Kağan (Britannic)</h3>
+                                    <span>Lacivert & Kraliyet</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #000080"></div>
+                                <div class="color-dot" style="background: #4169E1"></div>
+                                <div class="color-dot" style="background: #1E90FF"></div>
+                            </div>
+                        </div>
+
+                        <!-- 4. DEMİR DAĞ -->
+                        <div class="theme-card" data-theme="demir">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-solid fa-mountain"></i></div>
+                                <div class="theme-title">
+                                    <h3>Demir Dağ (Odin)</h3>
+                                    <span>Karbon & Gümüş</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #C0C0C0"></div>
+                                <div class="color-dot" style="background: #1C1C1C"></div>
+                                <div class="color-dot" style="background: #A9A9A9"></div>
+                            </div>
+                        </div>
+
+                        <!-- 5. ERLİK HAN -->
+                        <div class="theme-card" data-theme="erlik">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-solid fa-fire"></i></div>
+                                <div class="theme-title">
+                                    <h3>Erlik Han (London Red)</h3>
+                                    <span>Kızıl & Kömür</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #DC143C"></div>
+                                <div class="color-dot" style="background: #36454F"></div>
+                                <div class="color-dot" style="background: #8B0000"></div>
+                            </div>
+                        </div>
+
+                        <!-- 6. UMAY ANA -->
+                        <div class="theme-card" data-theme="umay">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-solid fa-leaf"></i></div>
+                                <div class="theme-title">
+                                    <h3>Umay Ana (Gaia)</h3>
+                                    <span>Zümrüt & Kurşun</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #50C878"></div>
+                                <div class="color-dot" style="background: #2A3439"></div>
+                                <div class="color-dot" style="background: #2E8B57"></div>
+                            </div>
+                        </div>
+
+                        <!-- 7. MERGEN -->
+                        <div class="theme-card" data-theme="mergen">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-solid fa-brain"></i></div>
+                                <div class="theme-title">
+                                    <h3>Mergen (Athena)</h3>
+                                    <span>Mor & Platin</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #800080"></div>
+                                <div class="color-dot" style="background: #E5E4E2"></div>
+                                <div class="color-dot" style="background: #9d4edd"></div>
+                            </div>
+                        </div>
+
+                        <!-- 8. KAM (ŞAMAN) -->
+                        <div class="theme-card" data-theme="kam">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-solid fa-bolt"></i></div>
+                                <div class="theme-title">
+                                    <h3>Kam (Cyberpunk)</h3>
+                                    <span>Pembe & Neon Okyanus</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #FF00FF"></div>
+                                <div class="color-dot" style="background: #00FFFF"></div>
+                                <div class="color-dot" style="background: #1a0024"></div>
+                            </div>
+                        </div>
+
+                        <!-- 9. BOZKIR -->
+                        <div class="theme-card" data-theme="bozkir">
+                            <i class="fa-solid fa-check theme-check"></i>
+                            <div class="theme-info">
+                                <div class="theme-icon"><i class="fa-regular fa-square"></i></div>
+                                <div class="theme-title">
+                                    <h3>Bozkır (Sade)</h3>
+                                    <span>Minimalist & Hızlı</span>
+                                </div>
+                            </div>
+                            <div class="color-preview">
+                                <div class="color-dot" style="background: #f3f4f6"></div>
+                                <div class="color-dot" style="background: #ffffff"></div>
+                                <div class="color-dot" style="background: #374151"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- News Page (Full View) -->
+            <div id="news-page" class="page-section">
+                <div class="card glass">
+                    <div class="card-header">
+                        <h2>Tüm İstihbarat Akışı</h2>
+                        <span class="live-badge">CANLI</span>
+                    </div>
+                    <div class="news-list" id="full-news-list">
+                        <!-- Reusing news functionality -->
+                        <div class="loading-spinner">Haberler Yükleniyor...</div>
+                    </div>
+                </div>
+            </div> <!-- End News Page Section -->
+
+            <!-- COTI Page -->
+            <div id="coti-page" class="page-section">
+                <div class="coti-header-section glass">
+                    <div class="coti-brand-lg">
+                        <i class="fa-solid fa-bolt pulse-purple"></i>
+                        <h1>COTI EXCLUSIVE INSIGHTS</h1>
+                    </div>
+                    <div class="coti-stats-row">
+                        <div class="coti-stat-item">
+                            <span class="label">BTC Dominance</span>
+                            <span class="value" id="coti-btcd">--.--%</span>
+                        </div>
+                        <div class="coti-stat-item">
+                            <span class="label">COTI Impact</span>
+                            <span class="value highlight" id="coti-impact-page">ACCUMULATION</span>
+                        </div>
+                        <div class="coti-stat-item">
+                            <span class="label">Volume 24h</span>
+                            <span class="value" id="coti-volume">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="coti-insights-grid">
+                    <!-- 1. Futures CVD -->
+                    <div class="card glass chart-large">
+                        <div class="card-header">
+                            <h3><i class="fa-solid fa-wave-square"></i> Futures CVD</h3>
+                            <span class="chart-desc">Cumulative Volume Delta (Futures)</span>
+                        </div>
+                        <div id="cvdFuturesChart" class="pro-chart"></div>
+                    </div>
+
+                    <!-- 2. Spot CVD -->
+                    <div class="card glass chart-large">
+                        <div class="card-header">
+                            <h3><i class="fa-solid fa-water"></i> Spot CVD</h3>
+                            <span class="chart-desc">Cumulative Volume Delta (Spot)</span>
+                        </div>
+                        <div id="cvdSpotChart" class="pro-chart"></div>
+                    </div>
+
+                    <!-- 3. Funding Rates -->
+                    <div class="card glass chart-large">
+                        <div class="card-header">
+                            <h3><i class="fa-solid fa-percent"></i> Funding Rates</h3>
+                            <span class="chart-desc">Long/Short Leverage Cost</span>
+                        </div>
+                        <div id="fundingChart" class="pro-chart"></div>
+                    </div>
+
+                    <!-- 4. Open Interest -->
+                    <div class="card glass chart-large">
+                        <div class="card-header">
+                            <h3><i class="fa-solid fa-chart-line"></i> Open Interest</h3>
+                            <span class="chart-desc">Total Active Contracts</span>
+                        </div>
+                        <div id="oiChart" class="pro-chart"></div>
+                    </div>
+
+                    <!-- 5. Aggregated Futures Bid/Ask -->
+                    <div class="card glass chart-large span-2">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-scale-balanced"></i> Derinlik Analizi (Bid/Ask)</h2>
+                            <span class="live-badge">CANLI</span>
+                        </div>
+                        <div id="bidAskChart" class="pro-chart"></div>
+                    </div>
+                </div>
+            </div> <!-- End COTI Page Section (Fixed) -->
+
+            <!-- Scanner Page (New) -->
+            <div id="scanner-page" class="page-section">
+                <div class="card glass">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-radar"></i> Akıllı Sinyal Tarayıcısı</h2>
+                        <span class="live-badge">TARAMA AKTİF</span>
+                    </div>
+                    <div class="scanner-controls" style="margin-bottom: 1rem; display: flex; gap: 1rem;">
+                        <span id="scan-status"
+                            style="color:#10b981; font-weight:bold; font-size:0.9rem;">Bekleniyor...</span>
+                    </div>
+                    <div class="table-container">
+                        <table style="width:100%; border-collapse:collapse; color:#e2e8f0; font-size:0.9rem;">
+                            <thead>
+                                <tr style="border-bottom:1px solid rgba(255,255,255,0.1); text-align:left;">
+                                    <th style="padding:10px;">Sembol</th>
+                                    <th style="padding:10px;">Fiyat</th>
+                                    <th style="padding:10px;">24s %</th>
+                                    <th style="padding:10px;">RSI (1s)</th>
+                                    <th style="padding:10px;">Hacim</th>
+                                    <th style="padding:10px;">Sinyal</th>
+                                    <th style="padding:10px;">Skor</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scanner-body">
+                                <!-- JS Populates -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Liq Heatmap Page (Dedicated) -->
+            <div id="liq-page" class="page-section">
+                <style>
+                    .liq-tab-p {
+                        background: rgba(255, 255, 255, 0.05);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        color: #9ca3af;
+                        padding: 6px 12px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 0.8rem;
+                        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                        font-weight: 500;
+                    }
+
+                    .liq-tab-p:hover {
+                        background: rgba(255, 255, 255, 0.1);
+                        border-color: rgba(255, 255, 255, 0.2);
+                    }
+
+                    .liq-tab-p.active {
+                        background: var(--red-neon-glow);
+                        border-color: #ef4444;
+                        color: #fff;
+                        box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+                    }
+
+                    .wall-short {
+                        box-shadow: 2px 0 10px rgba(239, 68, 68, 0.3);
+                        border-top-right-radius: 2px;
+                        border-bottom-right-radius: 2px;
+                    }
+
+                    .wall-long {
+                        box-shadow: -2px 0 10px rgba(16, 185, 129, 0.3);
+                        border-top-left-radius: 2px;
+                        border-bottom-left-radius: 2px;
+                    }
+
+                    .critical-row {
+                        background: rgba(239, 68, 68, 0.1) !important;
+                        animation: pulse-red 2s infinite;
+                    }
+
+                    .major-row {
+                        background: rgba(251, 191, 36, 0.05) !important;
+                    }
+
+                    @keyframes pulse-red {
+                        0% {
+                            background: rgba(239, 68, 68, 0.05);
+                        }
+
+                        50% {
+                            background: rgba(239, 68, 68, 0.15);
+                        }
+
+                        100% {
+                            background: rgba(239, 68, 68, 0.05);
+                        }
+                    }
+
+                    .price-grid-line {
+                        position: absolute;
+                        left: 0;
+                        right: 0;
+                        border-top: 1px solid rgba(255, 255, 255, 0.05);
+                        pointer-events: none;
+                    }
+
+                    .price-grid-label {
+                        position: absolute;
+                        left: 10px;
+                        font-size: 0.7rem;
+                        color: #4b5563;
+                        transform: translateY(-50%);
+                    }
+                </style>
+                <div class="card glass" style="min-height: 85vh; padding: 1.5rem;">
+                    <div class="card-header"
+                        style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 1.5rem; margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div
+                                style="width: 40px; height: 40px; background: rgba(239,68,68,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                                <i class="fa-solid fa-fire-flame-curved" style="color:#ef4444; font-size: 1.2rem;"></i>
+                            </div>
+                            <div>
+                                <h1 style="font-size: 1.4rem; margin: 0;">BTC Likidasyon Haritası</h1>
+                                <p style="font-size: 0.85rem; color: #9ca3af; margin: 0;">Profesyonel Seviye &
+                                    Etki
+                                    Analizi</p>
+                            </div>
+                        </div>
+                        <div class="liq-tabs-page"
+                            style="display:flex; gap:8px; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
+                            <button class="liq-tab-p active" data-tf="24h"
+                                onclick="updateLiquidationPage('24h', this)">Günün Özeti (24S)</button>
+                            <button class="liq-tab-p" data-tf="48h" onclick="updateLiquidationPage('48h', this)">48
+                                Saat</button>
+                            <button class="liq-tab-p" data-tf="1w" onclick="updateLiquidationPage('1w', this)">Haftalık
+                                Akış (1H)</button>
+                            <button class="liq-tab-p" data-tf="1m" onclick="updateLiquidationPage('1m', this)">Aylık
+                                Görünüm (1A)</button>
+                            <button class="liq-tab-p" data-tf="6m" onclick="updateLiquidationPage('6m', this)">Makro
+                                Analiz (6A)</button>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 1.2fr 0.8fr; gap:2.5rem;">
+                        <!-- Left: Visualization (Walls) -->
+                        <div class="liq-viz-container"
+                            style="background: rgba(15, 23, 42, 0.4); border-radius: 15px; border: 1px solid rgba(255,255,255,0.05); padding: 1.5rem; position: relative;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                                <h3 style="font-size: 1rem; color:#e2e8f0; margin: 0;"><i
+                                        class="fa-solid fa-chart-simple" style="color: #60a5fa; margin-right: 8px;"></i>
+                                    Likidasyon Duvarları</h3>
+                                <div style="display: flex; gap: 15px; font-size: 0.75rem;">
+                                    <span style="display: flex; align-items: center; gap: 5px;">
+                                        <div style="width: 8px; height: 8px; background: #ef4444; border-radius: 2px;">
+                                        </div> Short Liq
+                                    </span>
+                                    <span style="display: flex; align-items: center; gap: 5px;">
+                                        <div style="width: 8px; height: 8px; background: #10b981; border-radius: 2px;">
+                                        </div> Long Liq
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Visual Chart Container -->
+                            <div id="liq-walls-chart"
+                                style="height:500px; display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; overflow: hidden; background: radial-gradient(circle at center, rgba(30, 41, 59, 0.3) 0%, transparent 70%);">
+                                <!-- Price grid lines will be injected by JS -->
+                                <div id="liq-price-grid"></div>
+
+                                <!-- Central Price Line -->
+                                <div
+                                    style="width:100%; border-top: 2px solid rgba(255,255,255,0.2); position:absolute; top:50%; z-index: 10; filter: drop-shadow(0 0 5px rgba(255,255,255,0.3));">
+                                </div>
+                                <div id="liq-center-glow"
+                                    style="position: absolute; top: 50%; left: 0; right: 0; height: 40px; transform: translateY(-50%); background: linear-gradient(to bottom, transparent, rgba(96, 165, 250, 0.05), transparent); pointer-events: none;">
+                                </div>
+
+                                <div id="liq-price-label-container" style="z-index: 20; position: relative;">
+                                    <span id="liq-page-price"
+                                        style="background: #1e293b; color: #fff; padding: 6px 14px; border-radius: 8px; font-weight: 800; border: 1px solid #3b82f6; box-shadow: 0 0 20px rgba(59, 130, 246, 0.4); font-family: 'JetBrains Mono', monospace; font-size: 1.1rem;">$----</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Impact Table -->
+                        <div class="liq-table-container">
+                            <h3 style="font-size: 1rem; color:#e2e8f0; margin-bottom: 1.5rem;"><i
+                                    class="fa-solid fa-bolt" style="color: #fbbf24; margin-right: 8px;"></i>
+                                Risk &
+                                Volatilite Analizi</h3>
+                            <div
+                                style="background: rgba(15, 23, 42, 0.4); border-radius: 15px; border: 1px solid rgba(255,255,255,0.05); overflow: hidden;">
+                                <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                                    <thead>
+                                        <tr style="background: rgba(0,0,0,0.2); color:#64748b; text-align:left;">
+                                            <th style="padding:12px 15px; font-weight: 600;">SEVİYE</th>
+                                            <th style="padding:12px 15px; font-weight: 600;">YÖN</th>
+                                            <th style="padding:12px 15px; font-weight: 600;">HACİM</th>
+                                            <th style="padding:12px 15px; font-weight: 600; text-align: right;">
+                                                MESAFE
+                                            </th>
+                                            <th style="padding:12px 15px; font-weight: 600; text-align: right;">
+                                                RİSK /
+                                                ETKİ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="liq-impact-body">
+                                        <!-- JS Populates -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Analysis Legend -->
+                            <div style="margin-top: 1.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div
+                                    style="background: rgba(239, 68, 68, 0.05); padding: 10px; border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.1);">
+                                    <div
+                                        style="font-size: 0.7rem; color: #ef4444; font-weight: 600; margin-bottom: 5px;">
+                                        SHORT BASKISI</div>
+                                    <div style="font-size: 0.9rem; font-weight: 800; color: #fff;"
+                                        id="page-total-short">--</div>
+                                </div>
+                                <div
+                                    style="background: rgba(16, 185, 129, 0.05); padding: 10px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.1);">
+                                    <div
+                                        style="font-size: 0.7rem; color: #10b981; font-weight: 600; margin-bottom: 5px;">
+                                        LONG BASKISI</div>
+                                    <div style="font-size: 0.9rem; font-weight: 800; color: #fff; text-align: right;"
+                                        id="page-total-long">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- POTI Page Section Ends Here -->
+            <!-- COTI Page -->
+
+            <!-- Backtest Page -->
+            <div id="test-page" class="page-section">
+                <div class="card glass">
+                    <div class="card-header">
+                        <h2><i class="fa-solid fa-flask"></i> Geçmiş Strateji Testi (Backtest)</h2>
+                    </div>
+
+                    <!-- Controls -->
+                    <div class="backtest-controls"
+                        style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.5rem; padding:1.5rem; margin-bottom:1rem; border-bottom:1px solid rgba(255,255,255,0.05);">
+                        <div class="input-group">
+                            <label style="color:var(--text-muted); font-size:0.85rem; margin-bottom:0.5rem;"><i
+                                    class="fa-brands fa-bitcoin"></i> Varlık</label>
+                            <select id="bt-coin"
+                                style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#fff;">
+                                <option value="BTC">Bitcoin (BTC)</option>
+                                <option value="ETH">Ethereum (ETH)</option>
+                                <option value="SOL">Solana (SOL)</option>
+                                <option value="BNB">Binance Coin (BNB)</option>
+                                <option value="TAO">Bittensor (TAO)</option>
+                                <option value="FET">Fetch.ai (FET)</option>
+                                <option value="DOGE">Dogecoin</option>
+                                <option value="AVAX">Avalanche</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label style="color:var(--text-muted); font-size:0.85rem; margin-bottom:0.5rem;"><i
+                                    class="fa-regular fa-clock"></i> Zaman Dilimi</label>
+                            <select id="bt-timeframe"
+                                style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#fff;">
+                                <option value="1h">1 Saatlik</option>
+                                <option value="4h">4 Saatlik</option>
+                                <option value="1d">1 Günlük</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label style="color:var(--text-muted); font-size:0.85rem; margin-bottom:0.5rem;"><i
+                                    class="fa-solid fa-chess-knight"></i> Strateji</label>
+                            <select id="bt-strategy"
+                                style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#fff;">
+                                <option value="RSI">RSI Reversal (30/70)</option>
+                                <option value="SMA">SMA Crossover (Trend)</option>
+                                <option value="MACD">MACD Momentum</option>
+                                <option value="AI_COMBO">💎 AI IMPARATOR (Combo)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label style="color:var(--text-muted); font-size:0.85rem; margin-bottom:0.5rem;"><i
+                                    class="fa-solid fa-wallet"></i> Başlangıç Kasa ($)</label>
+                            <input type="number" id="bt-balance" value="1000"
+                                style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#fff;">
+                        </div>
+                        <div style="align-self:end;">
+                            <button class="btn-primary" onclick="runBacktest()"
+                                style="width:100%; height:42px; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                <i class="fa-solid fa-rocket"></i> Simülasyonu Başlat
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Results Summary -->
+                    <div class="stats-grid mini" style="margin-top:1rem; padding:0 1rem;">
+                        <div class="mini-stat">
+                            <span class="label">Toplam Kâr:</span>
+                            <span class="value" id="bt-profit">--</span>
+                        </div>
+                        <div class="mini-stat">
+                            <span class="label">Başarı Ort.:</span>
+                            <span class="value" id="bt-winrate">--%</span>
+                        </div>
+                        <div class="mini-stat">
+                            <span class="label">İşlem Sayısı:</span>
+                            <span class="value" id="bt-trades">0</span>
+                        </div>
+                        <div class="mini-stat">
+                            <span class="label">Max Drawdown:</span>
+                            <span class="value" id="bt-drawdown" style="color:#ef4444;">--%</span>
+                        </div>
+                    </div>
+
+                    <!-- Charts -->
+                    <div
+                        style="padding:1rem; background:rgba(0,0,0,0.2); border-radius:12px; margin:1.5rem 1rem 1rem 1rem; border:1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin-bottom:1rem; font-size:0.9rem; color:var(--text-muted);"><i
+                                class="fa-solid fa-chart-line"></i> Bakiye Gelişim Eğrisi</h4>
+                        <div id="backtestChart" style="height:350px; width:100%;"></div>
+                    </div>
+
+                    <!-- Trade Log -->
+                    <div
+                        style="padding:1rem; max-height:300px; overflow-y:auto; border-top:1px solid rgba(255,255,255,0.1);">
+                        <h3>İşlem Kaydı</h3>
+                        <table class="data-table" style="font-size:0.85rem;">
+                            <thead>
+                                <tr>
+                                    <th>Tarih</th>
+                                    <th>Tip</th>
+                                    <th>Fiyat</th>
+                                    <th>Miktar</th>
+                                    <th>Bakiye</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bt-trade-log">
+                                <tr>
+                                    <td colspan="5" style="text-align:center; color:var(--text-muted);">
+                                        Simülasyon
+                                        bekleniyor...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+
+    <script src="script.js?v=30.0"></script>
+</body>
+
+</html>
