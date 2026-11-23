@@ -154,7 +154,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 # Groq Yapılandırması
 groq_client = None
-AI_MODEL = "llama-3.3-70b-versatile"
+AI_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 def initialize_groq():
     global groq_client
