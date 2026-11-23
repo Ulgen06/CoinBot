@@ -1,6 +1,6 @@
-# CoinBot (ÜLGEN)
+# CoinBot (ÜLGEN v31)
 
-Kripto haber, duygu analizi ve trading botu.
+Kripto haber, duygu analizi, çoklu indikatörlü otomatik trading botu ve gerçek zamanlı Web Dashboard.
 
 ## Kurulum (macOS & Windows)
 
@@ -10,17 +10,23 @@ Kripto haber, duygu analizi ve trading botu.
    cd CoinBot
    ```
 
-2. `.env.example` dosyasını `.env` olarak kopyalayıp API anahtarlarını doldurun:
+2. Gerekli Python paketlerini kurun:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. `.env.example` dosyasını `.env` olarak kopyalayıp API anahtarlarınızı girin:
    ```bash
    cp .env.example .env
    ```
 
-3. Botu çalıştırın:
-   ```bash
-   cd bot1haber
-   python3 run.py
-   ```
-   (Windows'ta `python run.py` veya `baslat.bat` kullanılabilir.)
+4. Botu ve Web Dashboard'u (`http://localhost:9001`) başlatın:
+   - **Windows:** `bot1haber/baslat.bat` (veya sessiz mod: `bot1haber/ULGEN_Gizli_Baslat.vbs`)
+   - **macOS / Linux:**
+     ```bash
+     chmod +x bot1haber/baslat.sh
+     ./bot1haber/baslat.sh
+     ```
 
 ## Güncelleme Alma
 

@@ -1647,8 +1647,14 @@ def handle_commands():
                 trader_process = None
                 send_telegram_message("🛑 **TRADER BOT DURDURULDU.**")
             else:
-                subprocess.run(["taskkill", "/F", "/IM", "python.exe", "/T"], capture_output=True)
-                send_telegram_message("🔍 Süreçler temizlendi.")
+                if trader_process:
+                    try:
+                        trader_process.terminate()
+                        trader_process.wait(timeout=5)
+                    except Exception:
+                        pass
+                    trader_process = None
+                send_telegram_message("🔍 Trader süreci güvenli şekilde temizlendi.")
 
         elif cmd == "/haber_ac":
             NEWS_SCAN_ENABLED = True
@@ -1678,11 +1684,15 @@ def handle_commands():
 def check_web_notifications():
     """Web panelden gelen bildirimleri kontrol et ve Telegram'a ilet."""
     try:
-        if not os.path.exists("web_notifications.json"):
+        notif_path = get_data_path("web_notifications.json")
+        if not os.path.exists(notif_path):
             return
             
-        with open("web_notifications.json", 'r') as f:
-            queue = json.load(f)
+        with open(notif_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if not content:
+                return
+            queue = json.loads(content)
             
         if not queue:
             return
@@ -1711,7 +1721,7 @@ def check_web_notifications():
                 time.sleep(1) # Hızlı spam engelleme
                 
         # Temizle
-        with open("web_notifications.json", 'w') as f:
+        with open(notif_path, 'w', encoding='utf-8') as f:
             json.dump([], f)
             
     except Exception as e:
@@ -1778,23 +1788,28 @@ def generate_pnl_card(symbol, side, entry, exit_price, pnl_usd, pnl_pct, leverag
 
 def check_web_commands():
     """Web panelden gelen AI komutlarını çalıştır."""
-    import json
     try:
-        if not os.path.exists("web_commands.json"):
+        cmd_path = get_data_path("web_commands.json")
+        resp_path = get_data_path("web_responses.json")
+        if not os.path.exists(cmd_path):
             return
             
-        with open("web_commands.json", 'r') as f:
-            queue = json.load(f)
+        with open(cmd_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if not content:
+                return
+            queue = json.loads(content)
             
         if not queue: return
         
         responses = {}
-        if os.path.exists("web_responses.json"):
-            with open("web_responses.json", 'r') as f:
-                responses = json.load(f)
+        if os.path.exists(resp_path):
+            with open(resp_path, 'r', encoding='utf-8') as f:
+                rcontent = f.read().strip()
+                if rcontent:
+                    responses = json.loads(rcontent)
         
         dirty = False
-        remaining_queue = []
         
         for item in queue:
             cmd_id = item.get('id')
@@ -1808,7 +1823,6 @@ def check_web_commands():
             answer = "Komut algılanamadı."
             
             # Mirror Telegram Commands
-            cmd_lower = cmd.lower()
             args = cmd.split(" ")[1:] if " " in cmd else []
             clean_cmd = cmd.split(" ")[0].lower()
 
@@ -1827,9 +1841,8 @@ def check_web_commands():
             elif clean_cmd == "/sinyal":
                 answer = "Anlık Sinyal Taraması: BTC Nötr, SOL Boğa (Yapay Zeka Sinyali)"
             elif clean_cmd == "/ozet":
-                answer = "Son 1 saatlik piyasa özeti: Makro veriler bekleniyor, volatilit düşük."
+                answer = "Son 1 saatlik piyasa özeti: Makro veriler bekleniyor, volatilite düşük."
             elif clean_cmd == "/takvim":
-                # Re-use calendar logic if possible
                 answer = "Ekonomik Takvim widget üzerinden takip edilebilir veya /takvim_detay yazın."
             else:
                 # AI Chat
@@ -1842,11 +1855,15 @@ def check_web_commands():
             dirty = True
             
         if dirty:
-            with open("web_responses.json", 'w') as f:
-                json.dump(responses, f)
+            # Keep only last 100 responses to avoid unbounded file growth
+            if len(responses) > 100:
+                keys = list(responses.keys())[-100:]
+                responses = {k: responses[k] for k in keys}
+            with open(resp_path, 'w', encoding='utf-8') as f:
+                json.dump(responses, f, ensure_ascii=False)
             
         # Clear processed
-        with open("web_commands.json", 'w') as f:
+        with open(cmd_path, 'w', encoding='utf-8') as f:
             json.dump([], f)
             
     except Exception as e:

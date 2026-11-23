@@ -59,7 +59,7 @@ function renderTreemap(coins) {
     const weights = {
         'BTC': 1200, 'ETH': 800, 'SOL': 500, 'BNB': 450, 'XRP': 400,
         'DOGE': 350, 'ADA': 300, 'AVAX': 280, 'TRX': 260, 'DOT': 240,
-        'LINK': 220, 'NEAR': 200, 'MATIC': 180, 'LTC': 160, 'FET': 150,
+        'LINK': 220, 'NEAR': 200, 'POL': 180, 'LTC': 160, 'FET': 150,
         'PEPE': 140, 'TAO': 130, 'RENDER': 120, 'APT': 110, 'SUI': 100,
         'OP': 90, 'ARB': 80, 'TIA': 70, 'STX': 60, 'FIL': 55
     };

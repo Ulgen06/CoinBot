@@ -45,6 +45,30 @@ TARGET_COIN = "TAOUSDT"
 def get_base_dir():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+def get_config_path(filename):
+    return os.path.join(get_base_dir(), 'config', filename)
+
+def load_bot_config():
+    """bot1haber/config/config.json ayarlarini canli olarak okur."""
+    defaults = {
+        "leverage": LEVERAGE,
+        "risk_percent": 5,
+        "stop_loss_pct": 2.5,
+        "take_profit_pct": 5.0,
+        "trader_mode": "Dengeli",
+        "trailing_stop": True
+    }
+    try:
+        cpath = get_config_path("config.json")
+        if os.path.exists(cpath):
+            with open(cpath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    defaults.update(data)
+    except Exception:
+        pass
+    return defaults
+
 def get_data_path(filename):
     return os.path.join(get_base_dir(), 'data', filename)
 
@@ -283,78 +307,127 @@ def get_wallet_status(current_prices, idle_reason=""):
     return msg, equity
 
 def manage_trade(symbol, signal, price, atr=0, reasons=[]):
-    """İşlem açar/kapatır ve Trailing Stop/Partial TP yönetir"""
-    if symbol not in COINS: 
-        return None
-        
+    """İşlem açar/kapatır ve Trailing Stop/Partial TP/config.json risk kurallarını yönetir"""
     wallet = safe_load_wallet()
     if not wallet: return None
+
+    # Yeni otomatik işlem sadece COINS listesindekiler için açılır;
+    # ancak mevcut açık pozisyonlar (webden manuel açılanlar dahil) HER ZAMAN yönetilir!
+    is_open = symbol in wallet.get('positions', {})
+    if not is_open and symbol not in COINS:
+        return None
+
+    cfg = load_bot_config()
+    cfg_lev = max(1, int(cfg.get('leverage', LEVERAGE)))
+    cfg_sl_pct = max(0.5, float(cfg.get('stop_loss_pct', 2.5))) / 100.0
+    cfg_tp_pct = max(1.0, float(cfg.get('take_profit_pct', 5.0))) / 100.0
+    cfg_trailing = bool(cfg.get('trailing_stop', True))
+    cfg_risk_pct = max(1.0, min(35.0, float(cfg.get('risk_percent', 5))))
+    mode = str(cfg.get('trader_mode', 'Dengeli'))
+    mode_margin_cap = {"Muhafazakar": 0.15, "Dengeli": 0.22, "Agresif": 0.30}.get(mode, 0.22)
+
     log = ""
     close_condition = False
     stop_hit = False
     reason = ""
-    
+
     # Mevcut pozisyon varsa yönet
-    if symbol in wallet['positions']:
+    if is_open:
         pos = wallet['positions'][symbol]
-        
-        # PNL Hesapla
+        pos_lev = max(1, int(pos.get('leverage', cfg_lev)))
+
+        # Ham fiyat PNL yüzdesi (kaldıraçsız)
         pnl_now = ((price - pos['entry']) / pos['entry']) if pos['type'] == 'LONG' else ((pos['entry'] - price) / pos['entry'])
 
-        # 1. Kademeli Kar Alım (Partial TP)
-        if 'partial_tp_hit' not in pos:
-            if pnl_now >= 0.03: 
-                profit_usd = (pos['amount'] * 0.5) * (pnl_now * LEVERAGE)
-                wallet['available_balance'] += (pos['amount'] * 0.5) + profit_usd
-                wallet['total_profit'] += profit_usd
-                pos['amount'] *= 0.5 
-                pos['partial_tp_hit'] = True
-                pos['stop_loss'] = pos['entry']
-                log += f"🎯 *KISMİ KAR ALINDI (%50):* `{symbol}` | PNL: `{profit_usd:+.2f}$`\n"
-
-        # 2. İzleyen Stop (Trailing Stop)
-        if pnl_now >= 0.05:
-            new_sl = price * 0.98 if pos['type'] == 'LONG' else price * 1.02
+        # 1. Kademeli Kar Alım (Partial TP - hedef TP'nin %60'ında %50 kar al + breakeven)
+        partial_trigger = max(0.02, cfg_tp_pct * 0.6)
+        if 'partial_tp_hit' not in pos and pnl_now >= partial_trigger:
+            half_margin = pos['amount'] * 0.5
+            profit_usd = half_margin * (pnl_now * pos_lev)
+            wallet['available_balance'] += half_margin + profit_usd
+            wallet['total_profit'] = wallet.get('total_profit', 0) + profit_usd
+            pos['amount'] *= 0.5
+            pos['partial_tp_hit'] = True
+            # Stop'u giriş fiyatına çek (Risk-free / Breakeven)
             if pos['type'] == 'LONG':
-                if new_sl > pos['stop_loss']: pos['stop_loss'] = new_sl
+                pos['stop_loss'] = max(pos.get('stop_loss', 0), pos['entry'] * 1.001)
             else:
-                if new_sl < pos['stop_loss']: pos['stop_loss'] = new_sl
+                cur_sl = pos.get('stop_loss', 0)
+                pos['stop_loss'] = min(cur_sl, pos['entry'] * 0.999) if cur_sl > 0 else pos['entry'] * 0.999
+            log += f"🎯 *KISMİ KAR ALINDI (%50):* `{symbol}` | PNL: `{profit_usd:+.2f}$` (Stop → Giriş)\n"
 
-        # 3. Kâr Alma (Take Profit %20+)
-        if pnl_now >= 0.20:
-             close_condition = True
-             reason = "💰 KAR ALINDI (%20+)"
+        # 2. İzleyen Stop (Trailing Stop - config'den kontrol edilir)
+        trail_trigger = max(0.025, cfg_tp_pct * 0.8)
+        if cfg_trailing and pnl_now >= trail_trigger:
+            trail_dist = min(0.02, max(0.008, cfg_sl_pct * 0.7))
+            new_sl = price * (1 - trail_dist) if pos['type'] == 'LONG' else price * (1 + trail_dist)
+            if pos['type'] == 'LONG':
+                if new_sl > pos.get('stop_loss', 0):
+                    pos['stop_loss'] = new_sl
+            else:
+                cur_sl = pos.get('stop_loss', 0)
+                if cur_sl == 0 or new_sl < cur_sl:
+                    pos['stop_loss'] = new_sl
 
-        # 4. Kapatma Koşulları
+        # 3. Kâr Alma (Take Profit - config'den okunan hedefin 2 katı veya min %15)
+        full_tp_trigger = max(cfg_tp_pct * 2.0, 0.10)
+        if pnl_now >= full_tp_trigger:
+            close_condition = True
+            reason = f"💰 KAR ALINDI (%{pnl_now*100:.1f})"
+
+        # 4. Ters Sinyal ile Kapatma
         if not close_condition:
             close_condition = (pos['type'] == 'LONG' and signal == 'SAT') or \
                               (pos['type'] == 'SHORT' and signal == 'AL')
-        
+
+        # 5. Stop Loss veya Likidasyon Kontrolü
         sl_level = pos.get('stop_loss', 0)
         if sl_level > 0:
-            if (pos['type'] == 'LONG' and price < sl_level) or \
-               (pos['type'] == 'SHORT' and price > sl_level):
+            if (pos['type'] == 'LONG' and price <= sl_level) or \
+               (pos['type'] == 'SHORT' and price >= sl_level):
                 stop_hit = True
+        if pnl_now * pos_lev <= -0.95:
+            stop_hit = True
+            reason = "💀 LİKİDASYON KORUMASI"
 
         if close_condition or stop_hit:
-            pnl_pct = ((price - pos['entry']) / pos['entry']) * LEVERAGE if pos['type'] == 'LONG' else ((pos['entry'] - price) / pos['entry']) * LEVERAGE
-            profit = pos['amount'] * pnl_pct
-            wallet['available_balance'] += pos['amount'] + profit
-            wallet['total_profit'] += profit
-            
-            if stop_hit: 
+            pnl_pct = pnl_now * pos_lev
+            # Likidasyon koruması: zarar marjini aşamaz
+            profit = max(-pos['amount'], pos['amount'] * pnl_pct)
+            wallet['available_balance'] += max(0.0, pos['amount'] + profit)
+            wallet['total_profit'] = wallet.get('total_profit', 0) + profit
+
+            if stop_hit and not reason:
                 reason = "🛑 STOP OLDU"
-            elif not reason: 
+            elif not reason:
                 reason = "💰 KAPAT"
-                
+
+            # İşlem geçmişine kaydet (Web Dashboard istatistikleri için)
+            if 'trade_history' not in wallet:
+                wallet['trade_history'] = []
+            wallet['trade_history'].append({
+                'timestamp': time.time(),
+                'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                'symbol': symbol,
+                'type': f"{pos['type']} ({reason})",
+                'entry': pos['entry'],
+                'price': price,
+                'amount': pos['amount'],
+                'total': round(pos['amount'] + profit, 2),
+                'pnl_usd': round(profit, 2),
+                'leverage': pos_lev,
+                'source': pos.get('source', 'Otomatik')
+            })
+            wallet['trade_history'] = wallet['trade_history'][-200:]
+
             del wallet['positions'][symbol]
             log += f"[{reason}]: `{symbol}` Finansal: `{profit:+.2f}$` (%{pnl_pct*100:.2f})"
-            
+
             # PNL Kartı Oluştur ve Gönder
             try:
                 card_path = generate_pnl_card(
-                    symbol, pos['type'], pos['entry'], price, 
-                    profit, pnl_pct, LEVERAGE
+                    symbol, pos['type'], pos['entry'], price,
+                    profit, pnl_pct, pos_lev
                 )
                 if card_path:
                     caption = f"{reason} - {symbol}\n💰 PNL: `{profit:+.2f}$`"
@@ -363,35 +436,39 @@ def manage_trade(symbol, signal, price, atr=0, reasons=[]):
                     except: pass
             except Exception as e:
                 print(f"Kart hatası: {e}")
-    
+
     # Yeni pozisyon aç
     elif signal in ['AL', 'SAT']:
         hour = datetime.now().hour
-        if 0 <= hour <= 4:
+        if 0 <= hour <= 4 and mode != "Agresif":
             return f"⏳ `{symbol}` Pasif Saatler (00-04). İşlem Açılmadı."
-            
-        margin = wallet['available_balance'] * 0.25 
-        if margin > 10: 
+
+        # Risk bazlı marjin hesabı (config.json uyumlu)
+        margin_ratio = min(mode_margin_cap, max(0.05, (cfg_risk_pct * 3.0) / 100.0))
+        margin = wallet['available_balance'] * margin_ratio
+        if margin > 10:
             wallet['available_balance'] -= margin
-            # ATR fallback (if ATR is 0, use 2% of price)
-            safe_atr = atr if atr > 0 else (price * 0.01)
-            sl = price - (2 * safe_atr) if signal == "AL" else price + (2 * safe_atr)
-            
+            safe_atr = atr if (atr and atr > 0) else (price * 0.01)
+            # ATR bazlı SL'yi config stop_loss_pct ile sınırla (çok dar/geniş olmasın)
+            atr_dist = min(price * cfg_sl_pct * 1.5, max(price * 0.008, 2.0 * safe_atr))
+            sl = price - atr_dist if signal == "AL" else price + atr_dist
+
             wallet['positions'][symbol] = {
                 "type": "LONG" if signal == "AL" else "SHORT",
-                "entry": price, 
-                "amount": margin, 
+                "entry": price,
+                "amount": round(margin, 2),
+                "leverage": cfg_lev,
                 "stop_loss": sl,
                 "source": "Otomatik",
                 "time": datetime.now().strftime('%H:%M:%S')
             }
-            log = f"🎰 *GİRİŞ:* `{symbol}` {signal} (x{LEVERAGE})\n"
-            log += f"🛡️ İlk Stop: `{sl:.2f}$` | Giriş: `{price:.2f}$`\n"
+            log = f"🎰 *GİRİŞ:* `{symbol}` {signal} (x{cfg_lev} | Mod: {mode})\n"
+            log += f"🛡️ İlk Stop: `{sl:.2f}$` | Giriş: `{price:.2f}$` | Marjin: `{margin:.2f}$`\n"
             if reasons:
                 log += f"🧠 *STRATEJİK GEREKÇELER:*\n"
                 for r in reasons:
                     log += f"   ➤ {r}\n"
-        
+
     # Geçmişe kaydet
     equity = wallet['available_balance'] + sum([p['amount'] for p in wallet['positions'].values()])
     if "equity_history" not in wallet: wallet["equity_history"] = []
@@ -552,155 +629,303 @@ def check_divergence(df):
     return ""
 
 def check_candles(df):
-    """Mum formasyonu analizi"""
+    """Mum formasyonu analizi (Boğa + Ayı simetrik)"""
     if len(df) < 2:
         return ""
-        
+
     row = df.iloc[-1]
     prev = df.iloc[-2]
     body = abs(row['c'] - row['o'])
     total_range = row['h'] - row['l']
-    
+    if total_range <= 0:
+        return ""
+
     # Doji - Kararsızlık
-    if body < total_range * 0.1: 
+    if body < total_range * 0.1:
         return "🕯️ Doji"
-    
+
+    # Yutan Boğa - Güçlü yükseliş
+    if row['c'] > row['o'] and prev['c'] < prev['o'] and row['c'] > prev['o'] and row['o'] <= prev['c']:
+        return "🔥 YutanB"
+
+    # Yutan Ayı - Güçlü düşüş
+    if row['c'] < row['o'] and prev['c'] > prev['o'] and row['c'] < prev['o'] and row['o'] >= prev['c']:
+        return "🩸 YutanA"
+
     # Çekiç - Dip sinyali
     lower_wick = min(row['c'], row['o']) - row['l']
-    if lower_wick > body * 2: 
+    upper_wick = row['h'] - max(row['c'], row['o'])
+    if lower_wick > body * 2 and upper_wick < body:
         return "🔨 Çekiç"
-    
-    # Yutan Boğa - Güçlü yükseliş
-    if row['c'] > row['o'] and prev['c'] < prev['o'] and row['c'] > prev['o']: 
-        return "🔥 YutanB"
-    
+
+    # Kayan Yıldız - Tepe sinyali
+    if upper_wick > body * 2 and lower_wick < body:
+        return "🌠 KayanY"
+
     return ""
 
 # ================== ANA ANALİZ MOTORU ==================
 def analyze_tf(symbol, tf):
-    """Teknik analiz yapar (RSI, ATR, ADX dahil)"""
+    """Gelişmiş teknik analiz (Wilder RSI, ATR, ADX/+DI/-DI, MACD, EMA20/50/65/200, Hacim)"""
     try:
-        limit = 200 if tf != "1M" else 50
+        limit = 220 if tf != "1M" else 50
         k = robust_json_get(
-            "https://fapi.binance.com/fapi/v1/klines", 
+            "https://fapi.binance.com/fapi/v1/klines",
             params={'symbol': symbol, 'interval': tf, 'limit': limit}
         )
-        if not k or len(k) < 30: return None
-        
+        if not k or len(k) < 30:
+            return None
+
         df = pd.DataFrame(k, columns=['t','o','h','l','c','v','x','q','n','tb','tq','i']).astype(float)
         cur, prev = df['c'].iloc[-1], df['c'].iloc[-2]
-        
-        # 1. RSI
+
+        # 1. Wilder's RSI (TradingView/Binance uyumlu)
         delta = df['c'].diff()
-        gain = delta.where(delta > 0, 0).rolling(14).mean()
-        loss = -delta.where(delta < 0, 0).rolling(14).mean()
-        df['rsi'] = 100 - (100 / (1 + gain / loss))
-        
-        # 2. ATR
-        df['tr'] = pd.concat([df['h']-df['l'], abs(df['h']-df['c'].shift()), abs(df['l']-df['c'].shift())], axis=1).max(axis=1)
-        df['atr'] = df['tr'].rolling(14).mean()
-        
-        # 3. ADX (Trend Gücü)
-        df['up'] = df['h'].diff(); df['dn'] = -df['l'].diff()
-        df['+dm'] = np.where((df['up']>df['dn']) & (df['up']>0), df['up'], 0)
-        df['-dm'] = np.where((df['dn']>df['up']) & (df['dn']>0), df['dn'], 0)
-        df['+di'] = 100 * (df['+dm'].rolling(14).mean() / df['atr'])
-        df['-di'] = 100 * (df['-dm'].rolling(14).mean() / df['atr'])
-        df['dx'] = 100 * abs(df['+di'] - df['-di']) / (df['+di'] + df['-di'])
-        df['adx'] = df['dx'].rolling(14).mean()
-        
-        ema50 = df['c'].ewm(span=50).mean().iloc[-1]
-        ema65 = df['c'].ewm(span=65).mean().iloc[-1]
-        
+        gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+        rs = gain / loss.replace(0, np.nan)
+        df['rsi'] = (100 - (100 / (1 + rs))).fillna(100)
+
+        # 2. Wilder's ATR
+        df['tr'] = pd.concat([
+            df['h'] - df['l'],
+            (df['h'] - df['c'].shift()).abs(),
+            (df['l'] - df['c'].shift()).abs()
+        ], axis=1).max(axis=1)
+        df['atr'] = df['tr'].ewm(alpha=1/14, adjust=False).mean()
+
+        # 3. Wilder's ADX (+DI / -DI)
+        up_move = df['h'].diff()
+        dn_move = -df['l'].diff()
+        plus_dm = pd.Series(np.where((up_move > dn_move) & (up_move > 0), up_move, 0.0), index=df.index)
+        minus_dm = pd.Series(np.where((dn_move > up_move) & (dn_move > 0), dn_move, 0.0), index=df.index)
+        atr_safe = df['atr'].replace(0, np.nan)
+        plus_di = 100 * (plus_dm.ewm(alpha=1/14, adjust=False).mean() / atr_safe)
+        minus_di = 100 * (minus_dm.ewm(alpha=1/14, adjust=False).mean() / atr_safe)
+        di_sum = (plus_di + minus_di).replace(0, np.nan)
+        dx = (100 * (plus_di - minus_di).abs() / di_sum).fillna(0)
+        df['adx'] = dx.ewm(alpha=1/14, adjust=False).mean()
+
+        # 4. MACD (12, 26, 9)
+        ema12 = df['c'].ewm(span=12, adjust=False).mean()
+        ema26 = df['c'].ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        macd_sig = macd_line.ewm(span=9, adjust=False).mean()
+        macd_hist = macd_line - macd_sig
+        macd_cross = ""
+        if macd_line.iloc[-2] <= macd_sig.iloc[-2] and macd_line.iloc[-1] > macd_sig.iloc[-1]:
+            macd_cross = "BULL"
+        elif macd_line.iloc[-2] >= macd_sig.iloc[-2] and macd_line.iloc[-1] < macd_sig.iloc[-1]:
+            macd_cross = "BEAR"
+
+        # 5. EMA Katmanları
+        ema20 = df['c'].ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = df['c'].ewm(span=50, adjust=False).mean().iloc[-1]
+        ema65 = df['c'].ewm(span=65, adjust=False).mean().iloc[-1]
+        ema200 = df['c'].ewm(span=200, adjust=False).mean().iloc[-1] if len(df) >= 200 else ema50
+
+        # 6. Bollinger Squeeze & Hacim Oranı
+        bb_mean = df['c'].rolling(20).mean().iloc[-1]
+        bb_std = df['c'].rolling(20).std().iloc[-1]
+        bb_width = (bb_std * 4 / bb_mean) if bb_mean else 0
+        vol_avg = df['v'].rolling(20).mean().iloc[-1]
+        vol_ratio = (df['v'].iloc[-1] / vol_avg) if (vol_avg and vol_avg > 0) else 1.0
+
         return {
-            "rsi": df['rsi'].iloc[-1], 
-            "adx": df['adx'].iloc[-1],
-            "trend": "📈" if cur > ema50 else "📉", 
+            "rsi": float(df['rsi'].iloc[-1]),
+            "adx": float(df['adx'].iloc[-1]) if not np.isnan(df['adx'].iloc[-1]) else 0.0,
+            "plus_di": float(plus_di.iloc[-1]) if not np.isnan(plus_di.iloc[-1]) else 0.0,
+            "minus_di": float(minus_di.iloc[-1]) if not np.isnan(minus_di.iloc[-1]) else 0.0,
+            "macd_hist": float(macd_hist.iloc[-1]),
+            "macd_cross": macd_cross,
+            "trend": "📈" if cur > ema50 else "📉",
             "c": cur, "prev": prev,
+            "ema20": ema20,
             "ema50": ema50,
             "ema65": ema65,
-            "sq": (df['c'].rolling(20).std() * 4 / df['c'].rolling(20).mean()).iloc[-1] < 0.01,
-            "wh": df['v'].iloc[-1] > (df['v'].rolling(20).mean().iloc[-1] * 2.5),
+            "ema200": ema200,
+            "sq": bool(bb_width < 0.015),
+            "wh": bool(vol_ratio > 2.2),
+            "vol_ratio": float(vol_ratio),
             "fvg": check_fvg(df), "div": check_divergence(df), "candle": check_candles(df),
-            "atr": df['atr'].iloc[-1]
+            "atr": float(df['atr'].iloc[-1])
         }
-    except Exception as e:
-        print(f"Hata {symbol} {tf}: {e}")
-        return None
     except Exception as e:
         print(f"Analiz hatası ({symbol} {tf}): {e}")
         return None
 
-# ================== STRATEJİ & KARAR MEKANİZMASI ==================
-def generate_strategy(rsi15, rsi4h, price, s1, r1, trend4h, candle, atr, div, fvg, is_squeeze, adx=0, btc_trend="", ema50=0, ema65=0):
+# ================== STRATEJİ & KARAR MEKANİZMASI (v31 SUPER ENGINE) ==================
+def generate_strategy(rsi15, rsi4h, price, s1, r1, trend4h, candle, atr, div, fvg, is_squeeze,
+                      adx=0, btc_trend="", ema50=0, ema65=0, ema200=0,
+                      macd_hist=0, macd_cross="", vol_ratio=1.0, plus_di=0, minus_di=0,
+                      funding_rate=0.0, news_sent=""):
     """
-    Gelişmiş Strateji Motoru - Mantıksal detayları ve sinyali üretir
+    ÜLGEN v31 Çok Katmanlı Simetrik Strateji Motoru (LONG + SHORT)
     """
+    cfg = load_bot_config()
+    mode = str(cfg.get('trader_mode', 'Dengeli'))
+    min_adx = {"Muhafazakar": 24, "Dengeli": 20, "Agresif": 16}.get(mode, 20)
+    min_conf = {"Muhafazakar": 76, "Dengeli": 68, "Agresif": 58}.get(mode, 68)
+
     signal = "NÖTR"
     desc = "Piyasa şu an dinleniyor."
     stop_level = 0
-    confidence = 65 
-    reasons = [] # Giriş gerekçeleri
-    
-    # Mantıksal teşhis tablosu
+    bull_score = 50
+    bear_score = 50
+    bull_reasons = []
+    bear_reasons = []
+
     logic_diagnostics = {
         "adx_val": adx,
-        "adx_status": "GÜÇLÜ TREND" if adx > 25 else ("ZAYIF TREND" if adx > 20 else "YATAY PİYASA"),
+        "adx_status": "GÜÇLÜ TREND" if adx > 25 else ("ZAYIF TREND" if adx > min_adx else "YATAY PİYASA"),
         "btc_corr": "UYUMLU ✅" if btc_trend == trend4h else "ZIT ⚠️",
         "time_filter": "AKTİF ✅" if not (0 <= datetime.now().hour <= 4) else "PASİF ⏳",
-        "volatility": "NORMAL" if atr/price < 0.05 else "YÜKSEK 🔥",
+        "volatility": "NORMAL" if (price > 0 and atr / price < 0.05) else "YÜKSEK 🔥",
+        "mode": mode
     }
 
-    # 1. ADX Filtresi
-    if adx < 22:
-        return "NÖTR", f"📉 TEST: Piyasa Yatay (ADX:{adx:.1f}). İşlem için trend bekle.", 0, logic_diagnostics, []
+    # 1. ADX Yatay Piyasa Filtresi
+    if adx < min_adx:
+        return "NÖTR", f"📉 Yatay Piyasa (ADX:{adx:.1f} < {min_adx}). Trend onayı bekleniyor.", 0, logic_diagnostics, []
 
-    # 2. BTC Korelasyonu
-    if btc_trend and btc_trend != trend4h:
-        confidence -= 20
-        
-    # 3. Güven Puanı İnce Ayar
-    if trend4h == "📈": 
-        confidence += 10
-        reasons.append(f"EMA 50 Üzerinde (Trend Pozitif)")
-    
-    if ema65 > 0:
-        if price > ema65: reasons.append(f"EMA 65 Üzerinde (Long Uygun)")
-        else: reasons.append(f"EMA 65 Altında (Short Uygun)")
+    # 2. Ana Trend (4H EMA50 & EMA200)
+    if trend4h == "📈":
+        bull_score += 14
+        bear_score -= 10
+        bull_reasons.append("4H Ana Trend Pozitif (EMA50 Üzeri)")
+    else:
+        bear_score += 14
+        bull_score -= 10
+        bear_reasons.append("4H Ana Trend Negatif (EMA50 Altı)")
 
-    if "Çekiç" in str(candle) or "YutanB" in str(candle): 
-        confidence += 15
-        reasons.append(f"Güçlü Mum Formasyonu: {candle}")
-        
-    if "PU" in str(div): 
-        confidence += 10
-        reasons.append(f"RSI Pozitif Uyumsuzluk (Dönüş)")
-        
-    if is_squeeze: confidence -= 10
-    
-    confidence = max(40, min(95, confidence))
-    margin = 0.005 
+    if ema200 > 0:
+        if price > ema200:
+            bull_score += 6
+            bull_reasons.append("EMA200 Üzerinde (Makro Boğa)")
+        else:
+            bear_score += 6
+            bear_reasons.append("EMA200 Altında (Makro Ayı)")
 
-    # Sinyaller ve Ek Gerekçeler
-    if price > r1 * (1 + margin) and trend4h == "📈" and confidence > 70:
+    # 3. Directional Index (+DI vs -DI)
+    if plus_di > minus_di and adx > 25:
+        bull_score += 8
+        bull_reasons.append(f"Alıcı Baskın (+DI:{plus_di:.0f} > -DI:{minus_di:.0f})")
+    elif minus_di > plus_di and adx > 25:
+        bear_score += 8
+        bear_reasons.append(f"Satıcı Baskın (-DI:{minus_di:.0f} > +DI:{plus_di:.0f})")
+
+    # 4. MACD Momentum
+    if macd_cross == "BULL":
+        bull_score += 12
+        bull_reasons.append("MACD Boğa Kesişimi 📈")
+    elif macd_hist > 0:
+        bull_score += 5
+    elif macd_cross == "BEAR":
+        bear_score += 12
+        bear_reasons.append("MACD Ayı Kesişimi 📉")
+    elif macd_hist < 0:
+        bear_score += 5
+
+    # 5. BTC Korelasyonu
+    if btc_trend == "📈":
+        bull_score += 6
+        bear_score -= 12
+    elif btc_trend == "📉":
+        bear_score += 6
+        bull_score -= 12
+
+    # 6. Mum Formasyonları (Simetrik)
+    c_str = str(candle)
+    if "Çekiç" in c_str or "YutanB" in c_str:
+        bull_score += 12
+        bull_reasons.append(f"Boğa Mum Formasyonu: {candle}")
+    elif "KayanY" in c_str or "YutanA" in c_str:
+        bear_score += 12
+        bear_reasons.append(f"Ayı Mum Formasyonu: {candle}")
+
+    # 7. RSI Divergence & FVG
+    if "PU" in str(div):
+        bull_score += 10
+        bull_reasons.append("RSI Pozitif Uyumsuzluk (Dönüş)")
+    elif "NU" in str(div):
+        bear_score += 10
+        bear_reasons.append("RSI Negatif Uyumsuzluk (Düşüş)")
+
+    if "🟢" in str(fvg):
+        bull_score += 5
+        bull_reasons.append("Boğa FVG Desteği")
+    elif "🔴" in str(fvg):
+        bear_score += 5
+        bear_reasons.append("Ayı FVG Direnci")
+
+    # 8. Hacim Onayı
+    if vol_ratio >= 1.6:
+        if bull_score >= bear_score:
+            bull_score += 8
+            bull_reasons.append(f"Güçlü Hacim Onayı ({vol_ratio:.1f}x)")
+        else:
+            bear_score += 8
+            bear_reasons.append(f"Güçlü Satış Hacmi ({vol_ratio:.1f}x)")
+
+    # 9. Funding Rate & Haber Duygusu Filtresi
+    if funding_rate > 0.0005:  # Aşırı kalabalık LONG
+        bull_score -= 8
+        bear_score += 4
+    elif funding_rate < -0.0005:  # Aşırı kalabalık SHORT
+        bear_score -= 8
+        bull_score += 4
+
+    if "BOĞA" in str(news_sent):
+        bull_score += 5
+        bull_reasons.append("Haber Duygusu Pozitif")
+    elif "AYI" in str(news_sent) or "PANİK" in str(news_sent):
+        bear_score += 5
+        bear_reasons.append("Haber Duygusu Negatif")
+
+    if is_squeeze:
+        bull_score -= 6
+        bear_score -= 6
+
+    bull_conf = max(35, min(95, bull_score))
+    bear_conf = max(35, min(95, bear_score))
+    margin = 0.004
+
+    # ══════════════════ KARAR MATRİSİ ══════════════════
+    # 1. BREAKOUT LONG
+    if r1 > 0 and price > r1 * (1 + margin) and trend4h == "📈" and bull_conf >= min_conf:
         signal = "AL"
-        desc = f"🌊 *BREAKOUT LONG:* R1 Kırıldı. (Güven: %{confidence})"
-        reasons.append(f"R1 Direnci Kırıldı ({r1:.0f}$)")
+        desc = f"🌊 *BREAKOUT LONG:* R1 Kırıldı. (Güven: %{bull_conf})"
+        bull_reasons.append(f"R1 Direnci Kırıldı ({r1:.2f}$)")
         stop_level = price - (1.5 * atr)
-    
-    elif price < s1 * (1 - margin) and trend4h == "📉" and confidence > 70:
-        signal = "SAT"
-        desc = f"🚨 *BREAKOUT SHORT:* S1 Kırıldı. (Güven: %{confidence})"
-        reasons.append(f"S1 Desteği Kırıldı ({s1:.0f}$)")
-        stop_level = price + (1.5 * atr)
-    
-    elif rsi15 < 30 and price <= s1 * 1.01 and trend4h == "📈":
-        signal = "AL"
-        desc = f"🟢 *DİP ALIMI:* Destek + Aşırı Satım. (Güven: %{confidence})"
-        reasons.append(f"RSI Aşırı Satım ({rsi15:.0f}) + Destek Teması")
-        stop_level = price - (2 * atr)
+        return signal, desc, stop_level, logic_diagnostics, bull_reasons
 
-    return signal, desc, stop_level, logic_diagnostics, reasons
+    # 2. BREAKOUT SHORT (Düzeltildi!)
+    if s1 > 0 and price < s1 * (1 - margin) and trend4h == "📉" and bear_conf >= min_conf:
+        signal = "SAT"
+        desc = f"🚨 *BREAKOUT SHORT:* S1 Kırıldı. (Güven: %{bear_conf})"
+        bear_reasons.append(f"S1 Desteği Kırıldı ({s1:.2f}$)")
+        stop_level = price + (1.5 * atr)
+        return signal, desc, stop_level, logic_diagnostics, bear_reasons
+
+    # 3. DİP / PULLBACK LONG
+    if rsi15 < 34 and trend4h == "📈" and bull_conf >= min_conf and ((s1 > 0 and price <= s1 * 1.015) or (ema50 > 0 and price <= ema50 * 1.008)):
+        signal = "AL"
+        desc = f"🟢 *DİP / PULLBACK LONG:* Destek + Aşırı Satım. (Güven: %{bull_conf})"
+        bull_reasons.append(f"RSI Aşırı Satım ({rsi15:.0f}) + Destek Bölgesi")
+        stop_level = price - (2.0 * atr)
+        return signal, desc, stop_level, logic_diagnostics, bull_reasons
+
+    # 4. TEPE / OVERBOUGHT SHORT (Yeni!)
+    if rsi15 > 66 and trend4h == "📉" and bear_conf >= min_conf and ((r1 > 0 and price >= r1 * 0.985) or (ema50 > 0 and price >= ema50 * 0.992)):
+        signal = "SAT"
+        desc = f"🔴 *TEPE / PULLBACK SHORT:* Direnç + Aşırı Alım. (Güven: %{bear_conf})"
+        bear_reasons.append(f"RSI Aşırı Alım ({rsi15:.0f}) + Direnç Bölgesi")
+        stop_level = price + (2.0 * atr)
+        return signal, desc, stop_level, logic_diagnostics, bear_reasons
+
+    best_conf = max(bull_conf, bear_conf)
+    desc = f"⏸️ Beklemede (Boğa:%{bull_conf} / Ayı:%{bear_conf} | Eşik:%{min_conf})"
+    return signal, desc, stop_level, logic_diagnostics, []
 # ================== GÖRSEL DASHBOARD ==================
 def generate_dashboard_image():
     """Heatmap ve Bollinger grafiği oluşturur"""
@@ -776,7 +1001,9 @@ def generate_dashboard_image():
         ax2.set_title('TREND VE SIKIŞMA (BOLLINGER)', color='white', fontsize=10)
         ax2.set_xticks([])
         
-        fn = "dashboard_v30.png"
+        assets_dir = os.path.join(get_base_dir(), "assets")
+        os.makedirs(assets_dir, exist_ok=True)
+        fn = os.path.join(assets_dir, "dashboard_v30.png")
         plt.tight_layout()
         plt.savefig(fn, dpi=100)
         plt.close()
@@ -862,11 +1089,17 @@ def generate_full_report(live_trade=False):
         if d15 and d4h:
             candle_info = d1h['candle'] if d1h else ""
             sig, desc, stop, diag, reasons = generate_strategy(
-                d15['rsi'], d4h['rsi'], d15['c'], s1, r1, 
-                d4h['trend'], candle_info, d15['atr'], 
+                d15['rsi'], d4h['rsi'], d15['c'], s1, r1,
+                d4h['trend'], candle_info, d15['atr'],
                 d15['div'], d15['fvg'], d15['sq'],
                 adx=d15.get('adx', 0), btc_trend=btc_trend_val,
-                ema50=d15.get('ema50', 0), ema65=d15.get('ema65', 0)
+                ema50=d15.get('ema50', 0), ema65=d15.get('ema65', 0),
+                ema200=d4h.get('ema200', 0),
+                macd_hist=d15.get('macd_hist', 0), macd_cross=d15.get('macd_cross', ""),
+                vol_ratio=d15.get('vol_ratio', 1.0),
+                plus_di=d15.get('plus_di', 0), minus_di=d15.get('minus_di', 0),
+                funding_rate=funding_rates.get(coin, 0.0),
+                news_sent=news_sent
             )
             coin_analyses[coin] = {
                 's1': s1, 'r1': r1, 'd15': d15, 'd1h': d1h, 'd4h': d4h,
@@ -930,9 +1163,10 @@ def generate_full_report(live_trade=False):
         msg += f"   {fund_color} Funding: `%{fund_rate:.4f}` "
         msg += f"({'Long baskısı' if fund_rate > 0 else 'Short baskısı' if fund_rate < 0 else 'Nötr'})\n"
         
-        # Tüm timeframe'ler
+        # Tüm timeframe'ler (15m/1h/4h önbellekten okunur, çift API çağrısı yapılmaz)
+        tf_cache = {"15m": analysis.get('d15'), "1h": analysis.get('d1h'), "4h": analysis.get('d4h')}
         for tf in TIMEFRAMES:
-            d = analyze_tf(coin, tf)
+            d = tf_cache.get(tf) or analyze_tf(coin, tf)
             if d:
                 # İkonlar
                 icons = ""
@@ -1099,18 +1333,19 @@ Her 15 dakikada bir tam rapor geliyor.
             # ═══════════════════════════════════════
             # 1. SL/TP VE POZİSYON KONTROLÜ (HIZLI)
             # ═══════════════════════════════════════
-            # Her döngüde anlık fiyatları çekip stop/kar kontrolü yapalım
-            for coin in COINS:
+            # Her döngüde COINS + webden açılan tüm açık pozisyonların SL/TP kontrolü
+            wallet_snapshot = safe_load_wallet() or {}
+            monitored_symbols = list(dict.fromkeys(COINS + list(wallet_snapshot.get('positions', {}).keys())))
+            for coin in monitored_symbols:
                 try:
-                    # Hızlı fiyat kontrolü
+                    api_sym = coin if coin.endswith("USDT") else f"{coin}USDT"
                     p_data = robust_json_get(
-                        f"https://fapi.binance.com/fapi/v1/ticker/price", 
-                        params={'symbol': coin},
+                        f"https://fapi.binance.com/fapi/v1/ticker/price",
+                        params={'symbol': api_sym},
                         timeout=3
                     )
                     if p_data and 'price' in p_data:
                         price = float(p_data['price'])
-                        # Sinyal "NÖTR" gönderiyoruz ki yeni işlem açmasın, sadece yönetin
                         log = manage_trade(coin, "NÖTR", price)
                         if log:
                             print(f"\n⚡ İŞLEM GÜNCELLEME: {log}")

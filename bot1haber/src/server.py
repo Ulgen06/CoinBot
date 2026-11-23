@@ -106,13 +106,12 @@ def get_global_metrics():
 # -------------------------------
 
 
-# File paths (Adjusted to data/ directory)
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-WALLET_FILE = os.path.join(DATA_DIR, "wallet.json")
-SEEN_NEWS_FILE = os.path.join(DATA_DIR, "seen_news.json")
-CALENDAR_FILE = os.path.join(DATA_DIR, "calendar.json")
-CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
-NEWS_ARCHIVE_FILE = os.path.join(DATA_DIR, "news_archive.json")
+# File names (resolved via get_data_path / get_config_path)
+WALLET_FILE = "wallet.json"
+SEEN_NEWS_FILE = "seen_news.json"
+CALENDAR_FILE = "calendar.json"
+CONFIG_FILE = "config.json"
+NEWS_ARCHIVE_FILE = "news_archive.json"
 
 # --- Whale Alarm Config ---
 WHALE_THRESHOLD = 50000 # $50k (Lowered for activity)
@@ -215,6 +214,7 @@ def save_json_file(filename, data):
         filepath = get_data_path(filename)
 
     try:
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         temp_file = filepath + ".tmp"
         with open(temp_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
@@ -259,8 +259,9 @@ def get_portfolio():
         if curr and pos.get('entry'):
             entry = pos['entry']
             pType = pos.get('type', 'LONG')
+            pos_lev = pos.get('leverage', LEVERAGE)
             pnl_pct = ((curr - entry) / entry) if pType == 'LONG' else ((entry - curr) / entry)
-            pnl_usd = pos['amount'] * pnl_pct * LEVERAGE
+            pnl_usd = pos['amount'] * pnl_pct * pos_lev
             unrealized_pnl_total += pnl_usd
 
     equity = balance + margin_used + unrealized_pnl_total
@@ -428,31 +429,36 @@ def close_position():
     else: # SHORT
         pnl_pct = (pos['entry'] - cur_price) / pos['entry']
         
-    pnl = pos['amount'] * pnl_pct * lev
-    
+    pnl = max(-pos['amount'], pos['amount'] * pnl_pct * lev)
+    total_value = max(0.0, pos['amount'] + pnl)
+
     # Update Wallet
-    wallet['available_balance'] += pos['amount'] + pnl
-    
+    wallet['available_balance'] += total_value
+    wallet['total_profit'] = wallet.get('total_profit', 0) + pnl
+
     # Record in history
     trade = {
         'timestamp': time.time(),
         'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
         'symbol': symbol,
-        'type': 'SELL (CLOSE)',
+        'type': f"{pType} (CLOSE)",
+        'entry': pos.get('entry', 0),
         'price': cur_price,
-        'amount': qty,
-        'total': total_value,
-        'pnl_usd': pnl
+        'amount': pos.get('amount', qty),
+        'total': round(total_value, 2),
+        'pnl_usd': round(pnl, 2),
+        'leverage': lev
     }
-    
+
     if 'trade_history' not in wallet: wallet['trade_history'] = []
     wallet['trade_history'].append(trade)
-    
+
     # Remove position
     del wallet['positions'][symbol]
-    
+
     # Update Equity History
-    current_equity = wallet['available_balance'] + sum([p.get('total_cost', 0) for p in wallet['positions'].values()])
+    current_equity = wallet['available_balance'] + sum([p.get('amount', 0) for p in wallet['positions'].values()])
+    if 'equity_history' not in wallet: wallet['equity_history'] = []
     wallet['equity_history'].append({
         'timestamp': time.time(),
         'equity': current_equity
@@ -506,28 +512,41 @@ def get_news():
         'items': news
     })
 
+PRICES_CACHE = {"data": {}, "ts": 0}
+
 def _get_live_prices_internal():
-    """Internal helper to get prices dict"""
+    """Single batch Binance request with 5s cache (30x faster than sequential polling)"""
     import requests
+    now = time.time()
+    if PRICES_CACHE["data"] and (now - PRICES_CACHE["ts"] < 5):
+        return PRICES_CACHE["data"]
+
     coins = [
-        "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", 
-        "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "LINKUSDT", 
-        "MATICUSDT", "LTCUSDT", "ATOMUSDT", "NEARUSDT", "FETUSDT", 
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+        "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "LINKUSDT",
+        "POLUSDT", "LTCUSDT", "ATOMUSDT", "NEARUSDT", "FETUSDT",
         "RENDERUSDT", "GRTUSDT", "TAOUSDT", "INJUSDT", "PEPEUSDT",
         "APTUSDT", "SUIUSDT", "OPUSDT", "ARBUSDT", "TIAUSDT",
         "STXUSDT", "IMXUSDT", "FILUSDT", "LDOUSDT", "TRXUSDT"
     ]
     prices = {}
     try:
-        for coin in coins:
-            r = requests.get(f"https://api.binance.com/api/v3/ticker/24hr?symbol={coin}", timeout=1)
-            if r.status_code == 200:
-                data = r.json()
-                prices[coin] = {
-                    'price': float(data['lastPrice']),
-                    'change': float(data['priceChangePercent'])
+        r = requests.get(
+            "https://api.binance.com/api/v3/ticker/24hr",
+            params={"symbols": json.dumps(coins, separators=(",", ":"))},
+            timeout=5
+        )
+        if r.status_code == 200:
+            for item in r.json():
+                prices[item['symbol']] = {
+                    'price': float(item['lastPrice']),
+                    'change': float(item['priceChangePercent'])
                 }
-    except: pass
+            PRICES_CACHE["data"] = prices
+            PRICES_CACHE["ts"] = now
+    except Exception as e:
+        print(f"Batch Price Error: {e}")
+        return PRICES_CACHE["data"]
     return prices
 
 @app.route('/api/prices')
@@ -715,35 +734,78 @@ SIGNALS_CACHE = {}
 
 @app.route('/api/signals/<symbol>')
 def get_signals(symbol):
-    """AI Signal Dashboard Data: Detailed indicators for a coin"""
+    """AI Signal Dashboard Data: Real technical indicators from Binance 1h klines"""
+    import pandas as pd
+    import numpy as np
+
     symbol = symbol.upper().replace('USDT', '')
     if not symbol: symbol = "BTC"
-    
-    # Simple Cache to prevent rate limits
+
     now = time.time()
     if symbol in SIGNALS_CACHE and (now - SIGNALS_CACHE[symbol]['ts'] < 30):
         return jsonify(SIGNALS_CACHE[symbol]['data'])
-    
-    import random
-    
-    try:
-        # Get Price Change
-        res = _fetch_external_json(f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}USDT")
-        if not res: return jsonify({"status": "error", "message": "API Failure"})
 
+    try:
+        res = _fetch_external_json(f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}USDT")
+        klines = _fetch_external_json(f"https://api.binance.com/api/v3/klines?symbol={symbol}USDT&interval=1h&limit=100")
+        if not res or not klines or len(klines) < 30:
+            return jsonify({"status": "error", "message": "API Failure"})
+
+        closes = pd.Series([float(k[4]) for k in klines])
+        # Real Wilder RSI(14)
+        delta = closes.diff()
+        gain = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+        rs = gain / loss.replace(0, np.nan)
+        rsi = round(float((100 - (100 / (1 + rs))).fillna(100).iloc[-1]), 1)
+
+        # Real MACD(12, 26, 9)
+        ema12 = closes.ewm(span=12, adjust=False).mean()
+        ema26 = closes.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        sig_line = macd_line.ewm(span=9, adjust=False).mean()
+        hist = float((macd_line - sig_line).iloc[-1])
+        prev_hist = float((macd_line - sig_line).iloc[-2])
+        if hist > 0 and hist > prev_hist:
+            macd = "GÜÇLÜ BOĞA"
+        elif hist > 0:
+            macd = "BOĞA"
+        elif hist < 0 and hist < prev_hist:
+            macd = "GÜÇLÜ AYI"
+        else:
+            macd = "AYI"
+
+        # Real Bollinger Bands(20, 2)
+        sma20 = closes.rolling(20).mean().iloc[-1]
+        std20 = closes.rolling(20).std().iloc[-1]
+        upper_bb = sma20 + 2 * std20
+        lower_bb = sma20 - 2 * std20
+        cur_p = float(closes.iloc[-1])
+        if cur_p >= upper_bb:
+            bb = "Üst Bant (Aşırı Alım)"
+        elif cur_p <= lower_bb:
+            bb = "Alt Bant (Aşırı Satım)"
+        elif cur_p > sma20:
+            bb = "Üst Bölge (Pozitif)"
+        else:
+            bb = "Alt Bölge (Negatif)"
+
+        # Real Composite Score (0-100)
+        ema50 = float(closes.ewm(span=50, adjust=False).mean().iloc[-1])
+        score = 50
+        if cur_p > ema50: score += 12
+        else: score -= 12
+        if hist > 0: score += 12
+        else: score -= 12
+        if rsi < 32: score += 15
+        elif rsi > 68: score -= 15
+        elif rsi > 50: score += 5
+        else: score -= 5
         change = float(res.get('priceChangePercent', 0))
-        
-        # Robust mockup for technicals
-        rsi = 50 + (change * 2.5) + random.uniform(-4, 4)
-        rsi = max(10, min(90, round(rsi, 1)))
-        
-        macd = "GÜÇLÜ BOĞA" if change > 2 else ("BOĞA" if change > 0 else ("AYI" if change > -2 else "GÜÇLÜ AYI"))
-        bb = "Üst Bant (Aşırı Alım)" if change > 3 else ("Alt Bant (Aşırı Satım)" if change < -3 else "Orta Bant")
-        
-        score = 50 + (change * 6) + random.uniform(-5, 5)
+        score += max(-10, min(10, int(change * 1.5)))
         score = max(5, min(95, int(score)))
-        
-        decision = "GÜÇLÜ AL 🔥" if score > 80 else ("AL 📈" if score > 60 else ("SAT 📉" if score < 40 else "NÖTR ⚖️"))
+
+        decision = "GÜÇLÜ AL 🔥" if score >= 75 else ("AL 📈" if score >= 60 else ("GÜÇLÜ SAT 🚨" if score <= 25 else ("SAT 📉" if score <= 40 else "NÖTR ⚖️")))
 
         res_data = {
             "status": "success",
@@ -819,29 +881,72 @@ def stream():
 
 @app.route('/api/calendar')
 def api_calendar():
-    """Return mock macro calendar events"""
-    events = [
-        {"date": "2026-01-30", "event": "FED Faiz Kararı", "days_left": 1},
-        {"date": "2026-02-02", "event": "Tarım Dışı İstihdam", "days_left": 4},
-        {"date": "2026-02-14", "event": "CPI Enflasyon Verisi", "days_left": 16},
-        {"date": "2026-02-28", "event": "GSYİH (GDP) Büyüme", "days_left": 30}
-    ]
-    return jsonify(events)
+    """Return macro calendar events from data/calendar.json with live days_left"""
+    saved = read_json_file(CALENDAR_FILE, [])
+    today = datetime.now().date()
+    events = []
+    if isinstance(saved, list) and saved:
+        for ev in saved:
+            try:
+                d = datetime.strptime(ev.get("date", ""), "%Y-%m-%d").date()
+                days_left = (d - today).days
+                if days_left >= -1:
+                    events.append({
+                        "date": ev["date"],
+                        "event": ev.get("event", ev.get("title", "Makro Veri")),
+                        "days_left": max(0, days_left)
+                    })
+            except Exception:
+                continue
+    if not events:
+        events = [
+            {"date": today.strftime("%Y-%m-%d"), "event": "Makro takvim güncel veri bekliyor", "days_left": 0}
+        ]
+    return jsonify(events[:6])
+
+BOT_CHOICE_CACHE = {"data": None, "ts": 0}
 
 @app.route('/api/bot_choice')
 def get_bot_choice():
-    """Return the AI's top pick"""
-    # In a real scenario, this would come from the trading strategy analysis
-    choice = {
-        "symbol": "TAO",
-        "name": "Bittensor",
-        "signal": "GÜÇLÜ AL",
-        "confidence": 94,
-        "icon": "https://cryptologos.cc/logos/bittensor-tao-logo.png",
-        "price": 481.64,
-        "change": 12.5
-    }
-    return jsonify(choice)
+    """Return the AI's live top pick based on real Binance prices & momentum"""
+    now = time.time()
+    if BOT_CHOICE_CACHE["data"] and (now - BOT_CHOICE_CACHE["ts"] < 60):
+        return jsonify(BOT_CHOICE_CACHE["data"])
+
+    candidates = [
+        ("BTC", "Bitcoin", "https://cryptologos.cc/logos/bitcoin-btc-logo.png"),
+        ("ETH", "Ethereum", "https://cryptologos.cc/logos/ethereum-eth-logo.png"),
+        ("SOL", "Solana", "https://cryptologos.cc/logos/solana-sol-logo.png"),
+        ("TAO", "Bittensor", "https://cryptologos.cc/logos/bittensor-tao-logo.png"),
+        ("AVAX", "Avalanche", "https://cryptologos.cc/logos/avalanche-avax-logo.png"),
+        ("LINK", "Chainlink", "https://cryptologos.cc/logos/chainlink-link-logo.png"),
+    ]
+    prices = _get_live_prices_internal()
+    best = None
+    best_abs = -1
+    for sym, name, icon in candidates:
+        info = prices.get(f"{sym}USDT")
+        if not info:
+            continue
+        chg = info['change']
+        score = min(94, max(55, int(62 + abs(chg) * 4)))
+        if abs(chg) > best_abs:
+            best_abs = abs(chg)
+            sig = "GÜÇLÜ AL" if chg >= 3 else ("AL" if chg > 0 else ("GÜÇLÜ SAT" if chg <= -3 else "NÖTR"))
+            best = {
+                "symbol": sym,
+                "name": name,
+                "signal": sig,
+                "confidence": score,
+                "icon": icon,
+                "price": round(info['price'], 2),
+                "change": round(chg, 2)
+            }
+    if not best:
+        best = {"symbol": "BTC", "name": "Bitcoin", "signal": "NÖTR", "confidence": 65, "icon": "", "price": 0, "change": 0}
+    BOT_CHOICE_CACHE["data"] = best
+    BOT_CHOICE_CACHE["ts"] = now
+    return jsonify(best)
 
 @app.route('/api/scanner')
 def api_scanner():
@@ -850,8 +955,8 @@ def api_scanner():
     import requests
 
     scan_list = [
-        "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", 
-        "DOT", "LINK", "MATIC", "LTC", "ATOM", "NEAR", "PEPE", 
+        "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE",
+        "DOT", "LINK", "POL", "LTC", "ATOM", "NEAR", "PEPE",
         "FET", "RENDER", "GRT", "TAO", "INJ"
     ]
     
