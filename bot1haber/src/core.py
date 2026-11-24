@@ -13,20 +13,31 @@ import matplotlib
 matplotlib.use('Agg')
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+from logging.handlers import RotatingFileHandler
+
 # Ensure logs directory exists
 log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-logging.basicConfig(
-    filename=os.path.join(log_dir, "core_v2.log"),
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+_log_fmt = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+_file_handler = RotatingFileHandler(
+    os.path.join(log_dir, "core_v2.log"),
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
     encoding='utf-8'
 )
+_file_handler.setFormatter(_log_fmt)
 console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger('').addHandler(console)
+console.setLevel(logging.WARNING)
+console.setFormatter(_log_fmt)
+
+root_logger = logging.getLogger('')
+root_logger.setLevel(logging.INFO)
+root_logger.handlers.clear()
+root_logger.addHandler(_file_handler)
+root_logger.addHandler(console)
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
 logging.info("Core module initialized")
 
 
@@ -215,6 +226,29 @@ NEWS_SCAN_ENABLED = True
 # Global Nesneler
 analyzer = SentimentIntensityAnalyzer()
 translator = GoogleTranslator(source='auto', target='tr')
+_TRANSLATE_CACHE = {}
+_LAST_TRANSLATE_TS = 0.0
+
+def safe_translate(text):
+    """Rate-limit korumalı ve önbellekli Türkçe çeviri"""
+    global _LAST_TRANSLATE_TS
+    if not text or not isinstance(text, str):
+        return text
+    if text in _TRANSLATE_CACHE:
+        return _TRANSLATE_CACHE[text]
+    elapsed = time.time() - _LAST_TRANSLATE_TS
+    if elapsed < 0.4:
+        time.sleep(0.4 - elapsed)
+    try:
+        _LAST_TRANSLATE_TS = time.time()
+        res = translator.translate(text) or text
+        if len(_TRANSLATE_CACHE) > 300:
+            _TRANSLATE_CACHE.clear()
+        _TRANSLATE_CACHE[text] = res
+        return res
+    except Exception as e:
+        logging.warning(f"Çeviri atlandı (rate-limit/hata): {e}")
+        return text
 if not os.path.exists(ASSETS_DIR):
     os.makedirs(ASSETS_DIR)
 
@@ -1025,6 +1059,8 @@ def fetch_binance_listings():
         return []
 
 def fetch_cryptopanic_ultimate():
+    if not CRYPTOPANIC_API_KEY:
+        return []
     try:
         url = "https://cryptopanic.com/api/v1/posts/"
         params = {
@@ -1170,13 +1206,8 @@ def process_news_cycle():
             seen_news.add(news_id)
             continue
             
-        # 1.5. Çeviri (Türkçe)
-        title_tr = title
-        try:
-            # Başlığı Türkçeye çevir
-            title_tr = translator.translate(title)
-        except Exception as e:
-            print(f"Çeviri hatası: {e}")
+        # 1.5. Çeviri (Türkçe - rate-limit korumalı)
+        title_tr = safe_translate(title)
             
         # 2. İçerik Hazırlama
         symbol = None
@@ -1346,11 +1377,8 @@ def process_binance_listings():
         title = art.get('title', '')
         # Listeleme haberleri her zaman kritiktir
         
-        # Çeviri
-        title_tr = title
-        try:
-            title_tr = translator.translate(title)
-        except: pass
+        # Çeviri (rate-limit korumalı)
+        title_tr = safe_translate(title)
         
         # Tip belirleme
         icon = "🌟"
@@ -1886,7 +1914,7 @@ def main():
         print(f"❌ Dashboard Hatası: {e}")
 
     print(f"📊 İzlenen: {', '.join(WATCHED_COINS)}", flush=True)
-    print(f"🧠 AI: Gemini & Vader Aktif", flush=True)
+    print(f"🧠 AI: Groq & Vader", flush=True)
     print(f"📈 Grafikler: MPLFinance Aktif", flush=True)
     
     ai_status = "✅ Groq Aktif" if groq_client else f"⚠️ Groq Pasif ({groq_init_res})"

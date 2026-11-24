@@ -33,13 +33,13 @@ def _fetch_external_json(url, timeout=5):
         print(f"External API Error ({url}): {e}")
     return None
 
-def capture_log(message, type="INFO"):
+def capture_log(message, type="INFO", quiet_console=False):
     """Append log to buffer with timestamp"""
     ts = datetime.now().strftime('%H:%M:%S')
     log_entry = f"[{ts}] [{type}] {message}"
     
-    # Simple print patch
-    print(log_entry)
+    if not quiet_console:
+        print(log_entry, flush=True)
     
     LOG_BUFFER.append(log_entry)
     if len(LOG_BUFFER) > MAX_LOGS:
@@ -157,7 +157,8 @@ def start_whale_watcher():
                             if len(WHALE_BUFFER) > 20: WHALE_BUFFER.pop()
                             
                             log_msg = f"WHALE ALERT: {side} ${int(value/1000)}k @ {price}"
-                            capture_log(log_msg, "WHALE_RADAR")
+                            # Kucuk balinalar sadece web paneline gider; >=250k olanlar terminale de basilir
+                            capture_log(log_msg, "WHALE_RADAR", quiet_console=(value < 250000))
                     except: continue
                 
                 if data: last_id = data[-1]['a']
@@ -228,6 +229,10 @@ def save_json_file(filename, data):
 def index():
     """Serve main dashboard page"""
     return app.send_static_file('index.html')
+
+@app.route('/favicon.ico')
+def favicon():
+    return ('', 204)
 
 @app.route('/api/portfolio')
 def get_portfolio():
@@ -1448,12 +1453,13 @@ def api_backtest():
         return jsonify({"status": "error", "message": str(e)})
 
 def run_server():
-
     """Run Flask server"""
+    import flask.cli
+    flask.cli.show_server_banner = lambda *args, **kwargs: None
     # Start Background Threads
     threading.Thread(target=start_whale_watcher, daemon=True).start()
     
-    print("🌐 Starting Dashboard Server on http://localhost:9001")
+    print("🌐 Web Dashboard Aktif: http://localhost:9001", flush=True)
     app.run(host='0.0.0.0', port=9001, debug=False, use_reloader=False)
 
 if __name__ == '__main__':

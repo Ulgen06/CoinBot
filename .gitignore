@@ -19,7 +19,10 @@ bot1haber/logs/*
 # Runtime Data (her kullanici kendi cuzdan/haber verisini tutar)
 bot1haber/data/*
 !bot1haber/data/.gitkeep
+bot1haber/assets/*
+!bot1haber/assets/.gitkeep
 bot1haber/news_archive_v27.json
+news_archive_v27.json
 
 # OS Files (Windows & macOS)
 .DS_Store
